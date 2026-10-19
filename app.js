@@ -562,9 +562,10 @@
       </div>
       <div data-step="2" hidden>
         <div class="shots"></div>
+        <div class="add-more"></div>
         <div data-rec></div>
-        <div class="row mt"><button class="btn big" data-a="back">⬅️</button>
-          <button class="btn big ok grow" data-a="send">✅</button></div>
+        <div class="send-bar"><button class="btn big" data-a="back">⬅️</button>
+          <button class="btn big ok grow send-go" data-a="send">✅ <span class="send-n"></span></button></div>
       </div>`, s => {
         recorder = mountRecorder(s.querySelector('[data-rec]'), a => { st.audio = a; });
         return () => recorder.stop();
@@ -577,11 +578,16 @@
 
     // grade de fotos escolhidas, com ✖ em cada uma e blocos para adicionar mais
     const drawShots = () => {
-      sh.querySelector('.shots').innerHTML = st.fotos.map((url, i) =>
-        `<div class="shot" style="background-image:url('${url}')"><button data-del="${i}" aria-label="Remover">✖</button></div>`).join('') +
-        (`<label class="shot add">📷<input type="file" accept="image/*" capture="environment" hidden></label>
-          <label class="shot add">🖼️<input type="file" accept="image/*" multiple hidden></label>`);
-      sh.querySelectorAll('.shots input').forEach(bind);
+      const grid = sh.querySelector('.shots');
+      grid.classList.toggle('one', st.fotos.length === 1);
+      grid.innerHTML = st.fotos.map((url, i) =>
+        `<div class="shot" style="background-image:url('${url}')"><button data-del="${i}" aria-label="Remover">✖</button></div>`).join('');
+      // adicionar mais é opcional: botões pequenos, não blocos "vazios" na grade
+      sh.querySelector('.add-more').innerHTML = `
+        <label class="btn small-add">➕ 📷<input type="file" accept="image/*" capture="environment" hidden></label>
+        <label class="btn small-add">➕ 🖼️<input type="file" accept="image/*" multiple hidden></label>`;
+      sh.querySelectorAll('.add-more input').forEach(bind);
+      sh.querySelector('.send-n').textContent = st.fotos.length > 1 ? `📷×${st.fotos.length}` : '';
       if (!st.fotos.length) step(1);
     };
 

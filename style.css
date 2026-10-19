@@ -472,6 +472,19 @@ body.admin #app { max-width: 1080px; padding-bottom: 60px; }
 .gal-dots i.on { width: 22px; background: rgb(var(--accent-rgb)); }
 .gal-x { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; }
 
+/* envio com uma ou várias fotos */
+.shots.one { grid-template-columns: 1fr; }
+.shots.one .shot { aspect-ratio: 4/3; }
+.add-more { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+.small-add { min-height: 40px; padding: 8px 14px; font-size: 15px; border-radius: 12px; background: rgba(27, 30, 38, .6); color: var(--muted); cursor: pointer; }
+.send-bar {
+  position: sticky; bottom: calc(-22px - var(--safe-b)); margin: 18px -18px calc(-22px - var(--safe-b)); padding: 14px 18px calc(18px + var(--safe-b));
+  display: flex; gap: 10px; background: linear-gradient(180deg, transparent, #07090f 30%); z-index: 3;
+}
+.send-go { font-size: 26px; animation: sendpulse 2.2s var(--ease) infinite; }
+.send-go .send-n { font: 700 14px var(--font-data); opacity: .8; }
+@keyframes sendpulse { 50% { box-shadow: 0 0 0 6px rgba(47, 191, 113, .18), 0 10px 30px -12px rgba(47, 191, 113, .8); } }
+
 /* ============================================================ keyframes */
 @property --ang { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 @keyframes spinang { to { --ang: 360deg; } }
