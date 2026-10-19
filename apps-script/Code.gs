@@ -13,7 +13,6 @@ const TZ = 'America/Sao_Paulo';
 const CHUNK = 45000; // limite de célula do Sheets é 50.000 caracteres
 const KIDS = ['cesar', 'arthur'];
 const ADMIN = 'ericky';
-const MAX_FOTOS = 6;
 
 const SHEETS = {
   Usuarios:   ['id', 'nome', 'cor', 'foto_id'],
@@ -174,7 +173,7 @@ function statsDe_(k, relatos, resgates, movs) {
 
 function novoRelato_(r) {
   const k = checkKid_(r.usuario);
-  const fotos = (r.fotos || (r.foto ? [r.foto] : [])).slice(0, MAX_FOTOS);
+  const fotos = r.fotos || (r.foto ? [r.foto] : []);
   if (!fotos.length) throw new Error('Envie pelo menos uma foto');
   const fotoId = fotos.map(saveMidia_).join(','); // várias fotos: ids separados por vírgula
   const audioId = r.audio && r.audio.data ? saveMidia_(r.audio) : '';

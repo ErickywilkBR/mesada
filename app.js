@@ -549,7 +549,6 @@
 
   // compor relato (novo ou refazer)
   function compose(refazerId) {
-    const MAX = 6;
     const st = { fotos: [], audio: null };
     let recorder;
     const sh = openSheet(`
@@ -578,19 +577,16 @@
 
     // grade de fotos escolhidas, com ✖ em cada uma e blocos para adicionar mais
     const drawShots = () => {
-      const cheio = st.fotos.length >= MAX;
       sh.querySelector('.shots').innerHTML = st.fotos.map((url, i) =>
         `<div class="shot" style="background-image:url('${url}')"><button data-del="${i}" aria-label="Remover">✖</button></div>`).join('') +
-        (cheio ? '' : `<label class="shot add">📷<input type="file" accept="image/*" capture="environment" hidden></label>
+        (`<label class="shot add">📷<input type="file" accept="image/*" capture="environment" hidden></label>
           <label class="shot add">🖼️<input type="file" accept="image/*" multiple hidden></label>`);
       sh.querySelectorAll('.shots input').forEach(bind);
       if (!st.fotos.length) step(1);
     };
 
     const addFiles = async files => {
-      const livres = MAX - st.fotos.length;
-      if (files.length > livres) toast(`📷 máx. ${MAX}`, true);
-      for (const f of files.slice(0, livres)) {
+      for (const f of files) {
         try { st.fotos.push(await compressImage(f)); } catch { toast('⚠️ Foto inválida', true); }
       }
       if (st.fotos.length) { drawShots(); step(2); }
