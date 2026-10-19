@@ -13,6 +13,7 @@ const TZ = 'America/Sao_Paulo';
 const CHUNK = 45000; // limite de célula do Sheets é 50.000 caracteres
 const KIDS = ['cesar', 'arthur'];
 const ADMIN = 'ericky';
+const MAX_FOTOS = 6;
 
 const SHEETS = {
   Usuarios:   ['id', 'nome', 'cor', 'foto_id'],
@@ -173,8 +174,9 @@ function statsDe_(k, relatos, resgates, movs) {
 
 function novoRelato_(r) {
   const k = checkKid_(r.usuario);
-  if (!r.foto) throw new Error('A foto é obrigatória');
-  const fotoId = saveMidia_(r.foto);
+  const fotos = (r.fotos || (r.foto ? [r.foto] : [])).slice(0, MAX_FOTOS);
+  if (!fotos.length) throw new Error('Envie pelo menos uma foto');
+  const fotoId = fotos.map(saveMidia_).join(','); // várias fotos: ids separados por vírgula
   const audioId = r.audio && r.audio.data ? saveMidia_(r.audio) : '';
   const agora = new Date().toISOString();
 
@@ -182,7 +184,7 @@ function novoRelato_(r) {
     const row = findRow_('Relatos', r.refazerId);
     const x = rowObj_('Relatos', row);
     if (x.usuario !== k || x.status !== 'refazer') throw new Error('Esse relato não pode ser refeito');
-    deleteMidia_(x.foto_id);
+    x.foto_id.split(',').forEach(deleteMidia_);
     deleteMidia_(x.audio_id);
     setFields_('Relatos', row, {
       foto_id: fotoId, audio_id: audioId, status: 'pendente', criado_em: agora,

@@ -427,12 +427,17 @@
       <div class="list">${rel.map(relatoCard).join('')}</div>`;
   }
 
+  const fotosDe = r => String(r.foto_id || '').split(',').filter(Boolean);
+  function thumb(r) {
+    const f = fotosDe(r);
+    return `<div class="thumb" data-media="${f[0]}" onclick="A.gallery('${f.join(',')}')">📷${f.length > 1 ? `<span class="multi">${f.length}</span>` : ''}</div>`;
+  }
   const STATUS_COR = { pendente: 'var(--wait)', aprovado: 'var(--ok)', refazer: 'var(--redo)' };
   function relatoCard(r) {
     return `<div class="card">
       <span class="status-bar" style="background:${STATUS_COR[r.status]};box-shadow:0 0 12px ${STATUS_COR[r.status]}"></span>
       <div class="relato">
-        <div class="thumb" data-media="${r.foto_id}" onclick="A.zoomMedia('${r.foto_id}')">📷</div>
+        ${thumb(r)}
         <div class="info">
           ${badge(r)}
           ${r.status === 'aprovado' ? stars(r.nota) : ''}
@@ -510,7 +515,8 @@
 
   // compor relato (novo ou refazer)
   function compose(refazerId) {
-    const st = { foto: null, audio: null };
+    const MAX = 6;
+    const st = { fotos: [], audio: null };
     let recorder;
     const sh = openSheet(`
       <h2>${refazerId ? '🔁' : '➕'} <button class="btn ghost close" data-a="close">✖</button></h2>
@@ -518,18 +524,16 @@
       <div data-step="1">
         <div class="pick">
           <label>📷<input type="file" accept="image/*" capture="environment"></label>
-          <label>🖼️<input type="file" accept="image/*"></label>
+          <label>🖼️<input type="file" accept="image/*" multiple></label>
         </div>
       </div>
       <div data-step="2" hidden>
-        <img class="preview" alt="">
+        <div class="shots"></div>
         <div data-rec></div>
         <div class="row mt"><button class="btn big" data-a="back">⬅️</button>
           <button class="btn big ok grow" data-a="send">✅</button></div>
       </div>`, s => {
-        recorder = mountRecorder(s.querySelector('[data-rec]'), a => {
-          st.audio = a;
-        });
+        recorder = mountRecorder(s.querySelector('[data-rec]'), a => { st.audio = a; });
         return () => recorder.stop();
       });
 
@@ -538,18 +542,34 @@
       sh.querySelectorAll('.steps i').forEach((el, i) => el.classList.toggle('on', i < n));
     };
 
-    sh.querySelectorAll('.pick input').forEach(inp => inp.onchange = async () => {
-      const f = inp.files[0];
-      inp.value = '';
-      if (!f) return;
-      try {
-        st.foto = await compressImage(f);
-        sh.querySelector('.preview').src = st.foto;
-        step(2);
-      } catch { toast('⚠️ Foto inválida', true); }
-    });
+    // grade de fotos escolhidas, com ✖ em cada uma e blocos para adicionar mais
+    const drawShots = () => {
+      const cheio = st.fotos.length >= MAX;
+      sh.querySelector('.shots').innerHTML = st.fotos.map((url, i) =>
+        `<div class="shot" style="background-image:url('${url}')"><button data-del="${i}" aria-label="Remover">✖</button></div>`).join('') +
+        (cheio ? '' : `<label class="shot add">📷<input type="file" accept="image/*" capture="environment" hidden></label>
+          <label class="shot add">🖼️<input type="file" accept="image/*" multiple hidden></label>`);
+      sh.querySelectorAll('.shots input').forEach(bind);
+      if (!st.fotos.length) step(1);
+    };
+
+    const addFiles = async files => {
+      const livres = MAX - st.fotos.length;
+      if (files.length > livres) toast(`📷 máx. ${MAX}`, true);
+      for (const f of files.slice(0, livres)) {
+        try { st.fotos.push(await compressImage(f)); } catch { toast('⚠️ Foto inválida', true); }
+      }
+      if (st.fotos.length) { drawShots(); step(2); }
+    };
+
+    function bind(inp) {
+      inp.onchange = () => { const fs = [...inp.files]; inp.value = ''; if (fs.length) addFiles(fs); };
+    }
+    sh.querySelectorAll('.pick input').forEach(bind);
 
     sh.onclick = async e => {
+      const del = e.target.closest('[data-del]');
+      if (del) { st.fotos.splice(Number(del.dataset.del), 1); drawShots(); return; }
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'close') closeSheet();
       if (a === 'back') step(1);
@@ -558,7 +578,11 @@
         btn.disabled = true;
         btn.innerHTML = '<div class="spin sm"></div>';
         try {
-          await api('novoRelato', { foto: splitDataUrl(st.foto), audio: st.audio ? { mime: st.audio.mime, data: st.audio.data } : null, refazerId: refazerId || '' });
+          await api('novoRelato', {
+            fotos: st.fotos.map(splitDataUrl),
+            audio: st.audio ? { mime: st.audio.mime, data: st.audio.data } : null,
+            refazerId: refazerId || '',
+          });
           closeSheet();
           confetti(['📸', '🎤', '✨', '🚀']);
           toast('🚀 ✅');
@@ -644,11 +668,12 @@
     const u = user(r.usuario);
     const st = review[r.id] || (review[r.id] = { nota: 0, valor: '' });
     return `<div class="card review" data-id="${r.id}">
-      <div class="photo" data-media="${r.foto_id}" onclick="A.zoomMedia('${r.foto_id}')">📷</div>
+      <div class="photo" data-media="${fotosDe(r)[0]}" onclick="A.gallery('${fotosDe(r).join(',')}')">📷</div>
       <div class="photo-meta" style="position:relative;margin-top:-56px;height:56px;pointer-events:none">
         <span class="who" style="position:absolute;left:14px;bottom:12px;display:flex;align-items:center;gap:10px;font:700 20px var(--font-display);color:${u.cor}">${avatar(r.usuario, 'sm')}${esc(u.nome)}</span>
       </div>
       <div class="body">
+        ${fotosDe(r).length > 1 ? `<div class="strip">${fotosDe(r).map((id, i) => `<div class="thumb sm" data-media="${id}" onclick="A.gallery('${fotosDe(r).join(',')}', ${i})">📷</div>`).join('')}</div>` : ''}
         <div class="row small muted mono"><span>${quando(r.criado_em)}</span>${r.tentativas > 1 ? `<span class="badge refazer" style="margin-left:auto;font-size:12px">🔁 ${r.tentativas - 1}ª refeita</span>` : ''}</div>
         ${r.audio_id ? `<div class="row"><button class="play" onclick="A.play('${r.audio_id}', this)">▶</button><span class="muted">Ouvir o relato</span></div>` : '<div class="muted small">🔇 Sem áudio</div>'}
         <div class="star-pick">${Array.from({ length: 10 }, (_, i) =>
@@ -689,7 +714,7 @@
     if (!rel.length) return '<div class="empty">📭<p>Nenhum relato avaliado ainda.</p></div>';
     return `<div class="list">${rel.map(r => `
       <div class="card relato">
-        <div class="thumb" data-media="${r.foto_id}" onclick="A.zoomMedia('${r.foto_id}')">📷</div>
+        ${thumb(r)}
         <div class="info">
           <div class="row">${avatar(r.usuario, 'sm')}<b style="color:${user(r.usuario).cor}">${esc(user(r.usuario).nome)}</b>${badge(r)}</div>
           ${r.status === 'aprovado' ? stars(r.nota) : ''}
@@ -805,6 +830,29 @@
     compose, buy, editItem, refazer, aprovar,
     play: (id, btn) => playMedia(id, btn),
     zoomMedia: async id => { await getMedia([id]); media.has(id) && zoom(media.get(id)); },
+    gallery: async (ids, start = 0) => {
+      const list = String(ids).split(',').filter(Boolean);
+      if (list.length === 1) return A.zoomMedia(list[0]);
+      const z = document.createElement('div');
+      z.className = 'zoom gal-wrap';
+      z.innerHTML = `<div class="gal">${list.map(() => '<div class="slide"><div class="spin"></div></div>').join('')}</div>
+        <div class="gal-dots">${list.map((_, i) => `<i class="${i === start ? 'on' : ''}"></i>`).join('')}</div>
+        <button class="icon-btn gal-x">✖</button>`;
+      document.body.appendChild(z);
+      const gal = z.querySelector('.gal');
+      z.querySelector('.gal-x').onclick = () => z.remove();
+      gal.onclick = e => { if (e.target.classList.contains('slide')) z.remove(); };
+      gal.onscroll = () => {
+        const i = Math.round(gal.scrollLeft / gal.clientWidth);
+        z.querySelectorAll('.gal-dots i').forEach((d, k) => d.classList.toggle('on', k === i));
+      };
+      requestAnimationFrame(() => gal.scrollTo({ left: start * gal.clientWidth }));
+      try { await getMedia(list); } catch (e) { toast('⚠️ ' + e.message, true); }
+      gal.querySelectorAll('.slide').forEach((sl, i) => {
+        const url = media.get(list[i]);
+        sl.innerHTML = url ? `<img src="${url}">` : '⚠️';
+      });
+    },
     nota: (id, n) => {
       review[id].nota = n;
       document.querySelectorAll(`[data-id="${id}"] .star-pick button`).forEach((b, i) => {
