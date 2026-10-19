@@ -86,7 +86,7 @@
   function confetti(emojis = ['💰', '⭐', '🎉', '✨', '🪙']) {
     const c = document.createElement('div');
     c.className = 'confetti';
-    for (let i = 0; i < 28; i++) {
+    for (let i = 0; i < 16; i++) {
       const e = document.createElement('i');
       e.textContent = emojis[i % emojis.length];
       e.style.left = Math.random() * 100 + 'vw';
@@ -438,7 +438,7 @@
           ${r.status === 'aprovado' ? stars(r.nota) : ''}
           <div class="date">${quando(r.criado_em)}</div>
         </div>
-        <button class="play small" onclick="A.play('${r.audio_id}', this)" aria-label="Ouvir">▶</button>
+        ${r.audio_id ? `<button class="play small" onclick="A.play('${r.audio_id}', this)" aria-label="Ouvir">▶</button>` : ''}
       </div>
       ${r.status === 'refazer' ? `<div class="redo-box">
         ${r.resposta_audio_id ? `<button class="play small" style="background:var(--redo)" onclick="A.play('${r.resposta_audio_id}', this)">▶</button><span>🗣️</span>` : '<span style="font-size:22px">🔁</span>'}
@@ -525,11 +525,10 @@
         <img class="preview" alt="">
         <div data-rec></div>
         <div class="row mt"><button class="btn big" data-a="back">⬅️</button>
-          <button class="btn big ok grow" data-a="send" disabled>✅</button></div>
+          <button class="btn big ok grow" data-a="send">✅</button></div>
       </div>`, s => {
         recorder = mountRecorder(s.querySelector('[data-rec]'), a => {
           st.audio = a;
-          s.querySelector('[data-a="send"]').disabled = !a;
         });
         return () => recorder.stop();
       });
@@ -559,7 +558,7 @@
         btn.disabled = true;
         btn.innerHTML = '<div class="spin sm"></div>';
         try {
-          await api('novoRelato', { foto: splitDataUrl(st.foto), audio: { mime: st.audio.mime, data: st.audio.data }, refazerId: refazerId || '' });
+          await api('novoRelato', { foto: splitDataUrl(st.foto), audio: st.audio ? { mime: st.audio.mime, data: st.audio.data } : null, refazerId: refazerId || '' });
           closeSheet();
           confetti(['📸', '🎤', '✨', '🚀']);
           toast('🚀 ✅');
@@ -651,7 +650,7 @@
       </div>
       <div class="body">
         <div class="row small muted mono"><span>${quando(r.criado_em)}</span>${r.tentativas > 1 ? `<span class="badge refazer" style="margin-left:auto;font-size:12px">🔁 ${r.tentativas - 1}ª refeita</span>` : ''}</div>
-        <div class="row"><button class="play" onclick="A.play('${r.audio_id}', this)">▶</button><span class="muted">Ouvir o relato</span></div>
+        ${r.audio_id ? `<div class="row"><button class="play" onclick="A.play('${r.audio_id}', this)">▶</button><span class="muted">Ouvir o relato</span></div>` : '<div class="muted small">🔇 Sem áudio</div>'}
         <div class="star-pick">${Array.from({ length: 10 }, (_, i) =>
           `<button class="${i < st.nota ? 'on' : ''}" onclick="A.nota('${r.id}', ${i + 1})" aria-label="${i + 1}">⭐</button>`).join('')}</div>
         <div class="money-in"><span>R$</span><input inputmode="decimal" placeholder="0,00" value="${esc(st.valor)}"
@@ -696,7 +695,7 @@
           ${r.status === 'aprovado' ? stars(r.nota) : ''}
           <div class="date">${quando(r.criado_em)}</div>
         </div>
-        <button class="play small" onclick="A.play('${r.audio_id}', this)">▶</button>
+        ${r.audio_id ? `<button class="play small" onclick="A.play('${r.audio_id}', this)">▶</button>` : ''}
       </div>`).join('')}</div>`;
   }
 
@@ -878,7 +877,7 @@
   // inclinação 3D do cartão de saldo (mouse/dedo e giroscópio)
   const tilt = (x, y) => {
     const el = document.querySelector('[data-tilt]');
-    if (el) el.style.transform = `rotateY(${x * 10}deg) rotateX(${-y * 10}deg)`;
+    if (el) el.style.transform = `rotateY(${x * 4}deg) rotateX(${-y * 4}deg)`;
   };
   if (!calm) {
     document.addEventListener('pointermove', e => {

@@ -173,9 +173,9 @@ function statsDe_(k, relatos, resgates, movs) {
 
 function novoRelato_(r) {
   const k = checkKid_(r.usuario);
-  if (!r.foto || !r.audio) throw new Error('Foto e áudio são obrigatórios');
+  if (!r.foto) throw new Error('A foto é obrigatória');
   const fotoId = saveMidia_(r.foto);
-  const audioId = saveMidia_(r.audio);
+  const audioId = r.audio && r.audio.data ? saveMidia_(r.audio) : '';
   const agora = new Date().toISOString();
 
   if (r.refazerId) {
