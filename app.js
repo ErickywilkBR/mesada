@@ -93,8 +93,10 @@
       e.style.animationDelay = Math.random() * .5 + 's';
       c.appendChild(e);
     }
-    document.body.appendChild(c);
-    setTimeout(() => c.remove(), 2300);
+    const f = document.createElement('div');
+    f.className = 'flash';
+    document.body.append(f, c);
+    setTimeout(() => { c.remove(); f.remove(); }, 2300);
     navigator.vibrate?.(60);
   }
 
@@ -281,47 +283,99 @@
     S.data = null;
     S.tab = 'home';
     const cor = USERS[id].cor;
+    const n = parseInt(cor.slice(1), 16);
     const r = document.documentElement.style;
     r.setProperty('--accent', cor);
-    r.setProperty('--accent-soft', hexA(cor, id === ADMIN ? .08 : .16));
+    r.setProperty('--accent-rgb', `${n >> 16}, ${(n >> 8) & 255}, ${n & 255}`);
+    document.querySelector('meta[name=theme-color]').content = '#02060e';
     document.title = `${USERS[id].nome} · Mesada`;
     document.body.className = id === ADMIN ? 'admin' : 'kid';
     load();
   }
 
   async function load(silent) {
-    if (!silent) $app.innerHTML = `<div class="loader"><div class="spin"></div></div>`;
+    if (!silent) $app.innerHTML = skeleton();
     const me = S.me;
     try {
       const data = await api('bootstrap');
       if (me !== S.me) return;
       S.data = data;
-      render();
+      render(!silent);
     } catch (e) {
-      if (!silent) $app.innerHTML = `<div class="loader"><div style="font-size:48px">⚠️</div><p>${esc(e.message)}</p>
+      if (!silent) $app.innerHTML = `<div class="loader-err fade-in"><div class="empty"><span class="big">⚠️</span><p>${esc(e.message)}</p></div>
         <button class="btn primary" onclick="A.reload()">🔄</button></div>`;
       else toast('⚠️ ' + e.message, true);
     }
   }
 
-  function render() {
+  function skeleton() {
+    const b = (h, extra = '') => `<div class="skel" style="height:${h}px;${extra}"></div>`;
+    return `<div class="fade-in" style="display:grid;gap:14px;padding-top:6px">
+      <div class="row">${b(62, 'width:62px;border-radius:50%')}<div class="grow" style="display:grid;gap:8px">${b(12, 'width:30%')}${b(26, 'width:55%')}</div></div>
+      ${b(170, 'border-radius:26px')}${b(78)}${b(104)}${b(104)}</div>`;
+  }
+
+  function render(anim = false) {
     if (!S.data) return;
     $app.innerHTML = S.me === ADMIN ? renderAdmin() : renderKid();
+    if (anim) {
+      $app.querySelectorAll('.top, .balance-wrap, .cta, .section-title, .seg, .tabs-top, .list > *, .shop > *, .podium > *, .admin-grid > *, .medals > *, .hero-admin > *, .medal-who')
+        .forEach((el, i) => { el.classList.add('rise'); el.style.setProperty('--i', Math.min(i, 14)); });
+    }
+    $app.querySelectorAll('.medals > *').forEach((el, i) => el.style.setProperty('--i', i));
+    countUp();
+    navIndicator();
     hydrate($app);
+  }
+
+  // saldo sobe animado do último valor mostrado até o novo
+  function countUp() {
+    $app.querySelectorAll('[data-count]').forEach(el => {
+      const key = el.dataset.key || 'k';
+      const to = Number(el.dataset.count);
+      const from = S.shown?.[key] ?? 0;
+      (S.shown ||= {})[key] = to;
+      if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = brl(to); return; }
+      const t0 = performance.now(), dur = 1100;
+      const step = t => {
+        const p = Math.min(1, (t - t0) / dur);
+        const e = 1 - Math.pow(1 - p, 4);
+        el.textContent = brl(Math.round(from + (to - from) * e));
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  function navIndicator() {
+    const nav = $app.querySelector('.nav');
+    if (!nav) return;
+    const ind = nav.querySelector('.nav-ind');
+    const idx = ['home', 'loja', 'rank'].indexOf(S.tab);
+    const prev = ['home', 'loja', 'rank'].indexOf(S.prevTab ?? S.tab);
+    ind.style.transition = 'none';
+    ind.style.transform = `translateX(${prev * 76}px)`;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      ind.style.transition = '';
+      ind.style.transform = `translateX(${idx * 76}px)`;
+    }));
+    S.prevTab = S.tab;
   }
 
   // ------------------------------------------------------------ componentes
   function avatar(id, cls = '', cam = false) {
     const u = user(id);
-    return `<div class="avatar ${cls}" style="border-color:${u.cor}" ${u.foto_id ? `data-media="${u.foto_id}"` : ''}>
+    return `<div class="avatar ${cls}" style="--ring:${u.cor}" ${u.foto_id ? `data-media="${u.foto_id}"` : ''}>
       ${esc(u.nome[0])}${cam ? '<span class="cam">📷</span>' : ''}</div>`;
   }
+  const sectionTitle = (ico, title, count) =>
+    `<div class="section-title"><span class="ico">${ico}</span>${title ? `<h3>${title}</h3>` : ''}${count != null ? `<span class="count">${count}</span>` : ''}</div>`;
   const stars = n => n ? `<span class="stars">${'★'.repeat(n)}<span style="opacity:.25">${'★'.repeat(10 - n)}</span></span>` : '';
 
   function badge(r) {
-    if (r.status === 'aprovado') return `<span class="badge aprovado">✅ ${brl(r.valor)}</span>`;
-    if (r.status === 'refazer') return `<span class="badge refazer">🔁</span>`;
-    return `<span class="badge pendente">⏳</span>`;
+    if (r.status === 'aprovado') return `<span class="badge aprovado">✅ <span class="mono">${brl(r.valor)}</span></span>`;
+    if (r.status === 'refazer') return `<span class="badge refazer"><span class="live"></span>🔁</span>`;
+    return `<span class="badge pendente"><span class="live"></span>⏳</span>`;
   }
 
   // ------------------------------------------------------------ KID
@@ -336,24 +390,29 @@
 
     return `
       <div class="top">
-        <label style="cursor:pointer">${avatar(S.me, '', true)}
+        <label style="cursor:pointer">${avatar(S.me, 'ring-anim', true)}
           <input type="file" accept="image/*" hidden onchange="A.setFoto(this)"></label>
-        <div class="who"><div class="name">${esc(me.nome)}</div>
-          <div class="sub">${st.streak ? `🔥 ${st.streak}` : ''} ${st.media ? `· ⭐ ${st.media}` : ''}</div></div>
+        <div class="who"><div class="eyebrow">Mesada</div><div class="name"><em>${esc(me.nome)}</em></div>
+          <div class="sub">${st.streak ? `<span>🔥 <b class="mono">${st.streak}</b></span>` : ''}${st.media ? `<span>⭐ <b class="mono">${st.media}</b></span>` : ''}</div></div>
         <button class="icon-btn" onclick="A.reload()" aria-label="Atualizar">🔄</button>
       </div>
-      <div class="balance">
-        <div class="lbl">💰</div>
-        <div class="val mono">${brl(st.saldo)}</div>
-        <div class="chips">
-          <span class="chip">📅 ${brl(st.semana)}</span>
-          <span class="chip">🗓️ ${brl(st.mes)}</span>
-          <span class="chip">✅ ${st.aprovados || 0}</span>
+      <div class="balance-wrap">
+        <div class="balance" data-tilt>
+          <div class="shine"></div>
+          <div class="coins">${[12, 34, 58, 80].map((l, i) => `<i style="left:${l}%;bottom:10px;animation-delay:${i * 1.5}s">🪙</i>`).join('')}</div>
+          <div class="lbl">💰 <span class="eyebrow">saldo</span></div>
+          <div class="val" data-count="${st.saldo || 0}" data-key="saldo">${brl(st.saldo)}</div>
+          <div class="chips">
+            <span class="chip">📅 <span class="mono">${brl(st.semana)}</span></span>
+            <span class="chip">🗓️ <span class="mono">${brl(st.mes)}</span></span>
+            <span class="chip">✅ <span class="mono">${st.aprovados || 0}</span></span>
+          </div>
         </div>
       </div>
-      ${S.tab === 'home' ? `<button class="cta" onclick="A.compose()"><span class="ico">📸</span>+<span class="ico">🎤</span></button>` : ''}
-      ${body}
+      ${S.tab === 'home' ? `<button class="cta shimmer" onclick="A.compose()"><span class="ico">📸</span><span class="plus">+</span><span class="ico">🎤</span></button>` : ''}
+      <div class="view">${body}</div>
       <nav class="nav">
+        <span class="nav-ind"></span>
         <button class="${S.tab === 'home' ? 'on' : ''}" onclick="A.tab('home')" aria-label="Início">🏠${refazer ? `<span class="dot">${refazer}</span>` : ''}</button>
         <button class="${S.tab === 'loja' ? 'on' : ''}" onclick="A.tab('loja')" aria-label="Loja">🛍️</button>
         <button class="${S.tab === 'rank' ? 'on' : ''}" onclick="A.tab('rank')" aria-label="Ranking">🏆</button>
@@ -363,13 +422,15 @@
   function kidHome() {
     // "refazer" primeiro; o resto mantém a ordem (mais novo primeiro)
     const rel = [...S.data.relatos].sort((a, b) => (b.status === 'refazer') - (a.status === 'refazer'));
-    if (!rel.length) return `<div class="empty">📭<p>Nenhum relato ainda</p></div>`;
-    return `<div class="section-title">📜 <span class="count">${rel.length}</span></div>
+    if (!rel.length) return `<div class="empty"><span class="big">📭</span></div>`;
+    return `${sectionTitle('📜', '', rel.length)}
       <div class="list">${rel.map(relatoCard).join('')}</div>`;
   }
 
+  const STATUS_COR = { pendente: 'var(--wait)', aprovado: 'var(--ok)', refazer: 'var(--redo)' };
   function relatoCard(r) {
     return `<div class="card">
+      <span class="status-bar" style="background:${STATUS_COR[r.status]};box-shadow:0 0 12px ${STATUS_COR[r.status]}"></span>
       <div class="relato">
         <div class="thumb" data-media="${r.foto_id}" onclick="A.zoomMedia('${r.foto_id}')">📷</div>
         <div class="info">
@@ -391,18 +452,19 @@
     const itens = S.data.loja;
     const meus = S.data.resgates;
     return `
-      <div class="section-title">🛍️</div>
+      ${sectionTitle('🛍️', 'Loja')}
       ${itens.length ? `<div class="shop">${itens.map(it => {
         const ok = saldo >= it.preco;
         const pct = Math.min(100, Math.round(saldo / it.preco * 100));
-        return `<button class="card item ${ok ? '' : 'locked'}" onclick="A.buy('${it.id}')">
-          <div class="pic" ${it.imagem_id ? `data-media="${it.imagem_id}"` : ''}>${esc(it.emoji || '🎁')}</div>
-          <div class="body"><div class="nm">${esc(it.nome)}</div><div class="pr mono">${brl(it.preco)}</div>
+        return `<button class="card item ${ok ? 'can' : 'locked'}" onclick="A.buy('${it.id}')">
+          ${ok ? '' : '<span class="lock">🔒</span>'}
+          <div class="pic" ${it.imagem_id ? `data-media="${it.imagem_id}"` : ''}><span>${esc(it.emoji || '🎁')}</span></div>
+          <div class="body"><div class="nm">${esc(it.nome)}</div><div class="pr">${brl(it.preco)}</div>
           ${ok ? '' : `<div class="progress"><i style="width:${pct}%"></i></div>`}</div>
         </button>`;
-      }).join('')}</div>` : `<div class="empty">🏪<p>A loja ainda está vazia</p></div>`}
-      ${meus.length ? `<div class="section-title">🎁 <span class="count">${meus.length}</span></div>
-        <div class="list">${meus.map(resgateRow).join('')}</div>` : ''}`;
+      }).join('')}</div>` : `<div class="empty"><span class="big">🏪</span></div>`}
+      ${meus.length ? `${sectionTitle('🎁', '', meus.length)}
+        <div class="list">${meus.map(x => resgateRow(x)).join('')}</div>` : ''}`;
   }
 
   function resgateRow(x, admin) {
@@ -424,24 +486,24 @@
     const max = Math.max(1, ...kids.map(k => k.v));
     const pos = ['🥇', '🥈', '🥉'];
     return `
-      <div class="section-title">🏆</div>
+      ${sectionTitle('🏆', 'Ranking')}
       <div class="seg">
         ${[['saldo', '💰', 'Saldo'], ['semana', '📅', 'Semana'], ['mes', '🗓️', 'Mês']].map(([k, e, t]) =>
           `<button class="${key === k ? 'on' : ''}" onclick="A.rank('${k}')">${e}<span>${t}</span></button>`).join('')}
       </div>
       <div class="podium">${kids.map((k, i) => `
-        <div class="card rank-row">
+        <div class="card rank-row ${kids[0].v === k.v && k.v > 0 ? 'first' : ''}">
           <div class="pos">${kids[0].v === k.v && i > 0 ? pos[0] : pos[i]}</div>
-          ${avatar(k.id, 'sm')}
+          ${avatar(k.id, 'md')}
           <div class="nm" style="color:${k.cor}">${esc(k.nome)}</div>
-          <div class="v mono">${brl(k.v)}</div>
-          <div class="bar" style="width:${k.v / max * 100}%;background:${k.cor}"></div>
+          <div class="v">${brl(k.v)}</div>
+          <div class="bar" style="width:${k.v / max * 100}%;background:${k.cor};box-shadow:0 0 12px ${k.cor}"></div>
         </div>`).join('')}</div>
       ${KIDS.map(id => {
         const u = user(id), st = u.stats || {};
         const n = MEDALS.filter(m => m.ok(st)).length;
         return `<div class="medal-who">${avatar(id, 'sm')}<span style="color:${u.cor}">${esc(u.nome)}</span>
-            <span class="muted small" style="margin-left:auto">🏅 ${n}/${MEDALS.length}</span></div>
+            <span class="muted small mono" style="margin-left:auto">🏅 ${n}/${MEDALS.length}</span></div>
           <div class="medals">${MEDALS.map(m => `<div class="medal ${m.ok(st) ? '' : 'off'}">${m.e}<small>${m.t}</small></div>`).join('')}</div>`;
       }).join('')}`;
   }
@@ -543,14 +605,14 @@
     const fila = d.relatos.filter(r => r.status === 'pendente').sort((a, b) => a.criado_em < b.criado_em ? -1 : 1);
     const resg = d.resgates.filter(r => r.status === 'pendente');
     const tabs = [
-      ['fila', `📥 Fila${fila.length ? ` (${fila.length})` : ''}`],
-      ['resgates', `🎁 Resgates${resg.length ? ` (${resg.length})` : ''}`],
+      ['fila', '📥 Fila', fila.length],
+      ['resgates', '🎁 Resgates', resg.length],
       ['loja', '🛍️ Loja'],
       ['hist', '📜 Histórico'],
       ['rank', '🏆 Ranking'],
     ];
     let body = '';
-    if (S.adminTab === 'fila') body = fila.length ? `<div class="admin-grid">${fila.map(reviewCard).join('')}</div>` : `<div class="empty">🎉<p>Nada para avaliar.</p></div>`;
+    if (S.adminTab === 'fila') body = fila.length ? `<div class="admin-grid">${fila.map(reviewCard).join('')}</div>` : `<div class="empty"><span class="big">🎉</span><p>Nada para avaliar. Tudo em dia.</p></div>`;
     if (S.adminTab === 'resgates') body = adminResgates();
     if (S.adminTab === 'loja') body = adminLoja();
     if (S.adminTab === 'hist') body = adminHist();
@@ -558,18 +620,24 @@
 
     return `
       <div class="top">
-        <label style="cursor:pointer">${avatar(ADMIN, '', true)}<input type="file" accept="image/*" hidden onchange="A.setFoto(this)"></label>
-        <div class="who"><div class="name">Painel do ${esc(user(ADMIN).nome)}</div><div class="sub">Avalie os relatos e gerencie a loja</div></div>
+        <label style="cursor:pointer">${avatar(ADMIN, 'ring-anim', true)}<input type="file" accept="image/*" hidden onchange="A.setFoto(this)"></label>
+        <div class="who"><div class="eyebrow">Painel de controle</div><div class="name">Olá, <em>${esc(user(ADMIN).nome)}</em></div>
+          <div class="sub">${fila.length ? `<span class="badge pendente"><span class="live"></span>${fila.length} relato${fila.length > 1 ? 's' : ''} esperando</span>` : 'Tudo avaliado ✨'}</div></div>
         <button class="icon-btn" onclick="A.reload()" aria-label="Atualizar">🔄</button>
       </div>
-      <div class="kid-sum">${KIDS.map(id => {
+      <div class="hero-admin">${KIDS.map(id => {
         const u = user(id), st = u.stats || {};
         const pend = fila.filter(r => r.usuario === id).length;
-        return `<div class="card">${avatar(id)}<div><div style="font-weight:800;color:${u.cor}">${esc(u.nome)}</div>
-          <div class="v mono">${brl(st.saldo)}</div>
-          <div class="muted small">📅 ${brl(st.semana)} · ⏳ ${pend} · ⭐ ${st.media || '–'}</div></div></div>`;
-      }).join('')}</div>
-      <div class="tabs-top mt">${tabs.map(([k, t]) => `<button class="${S.adminTab === k ? 'on' : ''}" onclick="A.adminTab('${k}')">${t}</button>`).join('')}</div>
+        return `<div class="card kid-card"><span class="glow-blob" style="background:${u.cor}"></span>${avatar(id, '')}<div class="grow">
+          <div class="nm" style="color:${u.cor}">${esc(u.nome)}</div>
+          <div class="v" data-count="${st.saldo || 0}" data-key="saldo-${id}">${brl(st.saldo)}</div>
+          <div class="muted small mono">📅 ${brl(st.semana)} · ⏳ ${pend} · ⭐ ${st.media || '–'} · 🔥 ${st.streak || 0}</div></div></div>`;
+      }).join('')}
+        <div class="card kpi"><div class="eyebrow">Pago este mês</div>
+          <div class="v" data-count="${KIDS.reduce((s, id) => s + (user(id).stats?.mes || 0), 0)}" data-key="mes-total">–</div>
+          <div class="muted small mono">semana ${brl(KIDS.reduce((s, id) => s + (user(id).stats?.semana || 0), 0))}</div></div>
+      </div>
+      <div class="tabs-top mt">${tabs.map(([k, t, n]) => `<button class="${S.adminTab === k ? 'on' : ''}" onclick="A.adminTab('${k}')">${t}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>
       <div class="mt">${body}</div>`;
   }
 
@@ -578,9 +646,11 @@
     const st = review[r.id] || (review[r.id] = { nota: 0, valor: '' });
     return `<div class="card review" data-id="${r.id}">
       <div class="photo" data-media="${r.foto_id}" onclick="A.zoomMedia('${r.foto_id}')">📷</div>
+      <div class="photo-meta" style="position:relative;margin-top:-56px;height:56px;pointer-events:none">
+        <span class="who" style="position:absolute;left:14px;bottom:12px;display:flex;align-items:center;gap:10px;font:700 20px var(--font-display);color:${u.cor}">${avatar(r.usuario, 'sm')}${esc(u.nome)}</span>
+      </div>
       <div class="body">
-        <div class="head">${avatar(r.usuario, 'sm')}<span class="nm" style="color:${u.cor}">${esc(u.nome)}</span>
-          <span class="tag">${quando(r.criado_em)}${r.tentativas > 1 ? ` · 🔁${r.tentativas - 1}` : ''}</span></div>
+        <div class="row small muted mono"><span>${quando(r.criado_em)}</span>${r.tentativas > 1 ? `<span class="badge refazer" style="margin-left:auto;font-size:12px">🔁 ${r.tentativas - 1}ª refeita</span>` : ''}</div>
         <div class="row"><button class="play" onclick="A.play('${r.audio_id}', this)">▶</button><span class="muted">Ouvir o relato</span></div>
         <div class="star-pick">${Array.from({ length: 10 }, (_, i) =>
           `<button class="${i < st.nota ? 'on' : ''}" onclick="A.nota('${r.id}', ${i + 1})" aria-label="${i + 1}">⭐</button>`).join('')}</div>
@@ -730,15 +800,19 @@
   // ------------------------------------------------------------ ações globais
   window.A = {
     reload: () => load(),
-    tab: t => { S.tab = t; render(); scrollTo(0, 0); },
-    adminTab: t => { S.adminTab = t; render(); },
-    rank: k => { S.rank = k; render(); },
+    tab: t => { if (S.tab === t) return; S.tab = t; render(true); scrollTo({ top: 0, behavior: 'smooth' }); navigator.vibrate?.(8); },
+    adminTab: t => { S.adminTab = t; render(true); },
+    rank: k => { S.rank = k; render(true); },
     compose, buy, editItem, refazer, aprovar,
     play: (id, btn) => playMedia(id, btn),
     zoomMedia: async id => { await getMedia([id]); media.has(id) && zoom(media.get(id)); },
     nota: (id, n) => {
       review[id].nota = n;
-      document.querySelectorAll(`[data-id="${id}"] .star-pick button`).forEach((b, i) => b.classList.toggle('on', i < n));
+      document.querySelectorAll(`[data-id="${id}"] .star-pick button`).forEach((b, i) => {
+        b.classList.toggle('on', i < n);
+        b.classList.remove('pop');
+        if (i < n) { void b.offsetWidth; b.style.animationDelay = i * 25 + 'ms'; b.classList.add('pop'); }
+      });
       document.querySelector(`[data-id="${id}"] .money-in .mono`).textContent = n + '/10';
     },
     valor: (id, v, fill) => {
@@ -765,6 +839,59 @@
       } catch (err) { toast('⚠️ ' + err.message, true); }
     },
   };
+
+  // ------------------------------------------------------------ efeitos globais
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // spotlight: o brilho do card segue o dedo/mouse
+  document.addEventListener('pointermove', e => {
+    const el = e.target.closest?.('.card, .glass');
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    el.style.setProperty('--my', `${e.clientY - r.top}px`);
+  }, { passive: true });
+
+  // ripple no toque + spotlight aceso no mobile
+  document.addEventListener('pointerdown', e => {
+    const card = e.target.closest?.('.card');
+    if (card) {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+      card.style.setProperty('--my', `${e.clientY - r.top}px`);
+      card.classList.add('lit');
+      setTimeout(() => card.classList.remove('lit'), 500);
+    }
+    const b = e.target.closest?.('.btn, .cta, .nav button, .icon-btn');
+    if (!b || calm) return;
+    const r = b.getBoundingClientRect();
+    const s = Math.max(r.width, r.height);
+    const rip = document.createElement('span');
+    rip.className = 'ripple';
+    rip.style.cssText = `width:${s}px;height:${s}px;left:${e.clientX - r.left - s / 2}px;top:${e.clientY - r.top - s / 2}px`;
+    if (getComputedStyle(b).position === 'static') b.style.position = 'relative';
+    b.style.overflow = 'hidden';
+    b.appendChild(rip);
+    setTimeout(() => rip.remove(), 650);
+  }, { passive: true });
+
+  // inclinação 3D do cartão de saldo (mouse/dedo e giroscópio)
+  const tilt = (x, y) => {
+    const el = document.querySelector('[data-tilt]');
+    if (el) el.style.transform = `rotateY(${x * 10}deg) rotateX(${-y * 10}deg)`;
+  };
+  if (!calm) {
+    document.addEventListener('pointermove', e => {
+      const el = e.target.closest?.('[data-tilt]');
+      if (!el) return tilt(0, 0);
+      const r = el.getBoundingClientRect();
+      tilt((e.clientX - r.left) / r.width - .5, (e.clientY - r.top) / r.height - .5);
+    }, { passive: true });
+    window.addEventListener('deviceorientation', e => {
+      if (e.gamma == null) return;
+      tilt(Math.max(-1, Math.min(1, e.gamma / 30)) * .5, Math.max(-1, Math.min(1, (e.beta - 45) / 30)) * .5);
+    }, { passive: true });
+  }
 
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', () => {
