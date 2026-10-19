@@ -293,20 +293,54 @@
     load();
   }
 
-  async function load(silent) {
+  async function load(silent, auto) {
     if (!silent) $app.innerHTML = skeleton();
     const me = S.me;
+    S.fetching = true;
     try {
       const data = await api('bootstrap');
       if (me !== S.me) return;
+      const json = JSON.stringify(data);
+      if (silent && json === S.json) return; // nada mudou: não mexe na tela
+      // atualização automática: se a pessoa começou a mexer enquanto buscava, descarta e tenta depois
+      if (auto && busy()) return;
+      const saldoAntes = S.data && me !== ADMIN ? user(me).stats?.saldo : null;
+      S.json = json;
       S.data = data;
+      if (auto && saldoAntes != null && (user(me).stats?.saldo || 0) > saldoAntes) confetti(['💰', '🪙', '⭐']);
+      const y = scrollY;
       render(!silent);
+      if (silent) scrollTo(0, y);
     } catch (e) {
+      if (auto) return; // falha de rede no automático fica silenciosa
       if (!silent) $app.innerHTML = `<div class="loader-err fade-in"><div class="empty"><span class="big">⚠️</span><p>${esc(e.message)}</p></div>
         <button class="btn primary" onclick="A.reload()">🔄</button></div>`;
       else toast('⚠️ ' + e.message, true);
+    } finally {
+      S.fetching = false;
     }
   }
+
+  /** Atualização automática só quando a pessoa não está no meio de nada. */
+  function busy() {
+    if (document.getElementById('sheet-root').innerHTML) return true;   // tirando foto, gravando, comprando, editando item
+    if (document.querySelector('.zoom')) return true;                     // vendo foto/galeria
+    const el = document.activeElement;
+    if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;   // digitando
+    if (!player.paused) return true;                                       // ouvindo áudio
+    if (Object.values(review).some(r => r.nota || r.valor)) return true;   // Ericky avaliando um card
+    if (Date.now() - S.lastTouch < 4000) return true;                      // acabou de tocar na tela
+    return false;
+  }
+
+  const POLL_MS = 20000;
+  setInterval(() => {
+    if (document.visibilityState !== 'visible' || !S.me || !S.data || S.fetching || busy()) return;
+    load(true, true);
+  }, POLL_MS);
+  S.lastTouch = 0;
+  ['pointerdown', 'keydown', 'scroll'].forEach(ev =>
+    addEventListener(ev, () => { S.lastTouch = Date.now(); }, { passive: true, capture: true }));
 
   function skeleton() {
     const b = (h, extra = '') => `<div class="skel" style="height:${h}px;${extra}"></div>`;
@@ -942,7 +976,7 @@
 
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && S.me && S.data && !document.getElementById('sheet-root').innerHTML) load(true);
+    if (document.visibilityState === 'visible' && S.me && S.data && !S.fetching && !busy()) load(true, true);
   });
   route();
 })();
