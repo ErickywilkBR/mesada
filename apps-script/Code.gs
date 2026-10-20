@@ -22,7 +22,6 @@ const SHEETS = {
   Resgates:   ['id', 'usuario', 'item_id', 'nome', 'emoji', 'preco', 'status', 'criado_em', 'atualizado_em'],
   Movimentos: ['id', 'usuario', 'tipo', 'valor', 'ref', 'data'],
   Mensagens:  ['id', 'usuario', 'criado_em', 'tipo', 'texto', 'midia_id', 'mime', 'ref'],
-  Trocas:     ['id', 'de', 'para', 'dar_itens', 'dar_valor', 'pedir_itens', 'pedir_valor', 'status', 'criado_em', 'atualizado_em'],
 };
 
 /** Rode uma vez pelo editor: cria abas, cabeçalhos e usuários. */
@@ -93,8 +92,6 @@ const API = {
   enviarMsg: enviarMsg_,
   apagarMsg: apagarMsg_,
   pix: pix_,
-  propor: propor_,
-  trocaStatus: trocaStatus_,
 };
 
 // ---------------------------------------------------------------- leitura
@@ -119,12 +116,9 @@ function bootstrap_(r) {
       return { id: u.id, nome: u.nome, cor: u.cor, foto_id: u.foto_id, stats: stats[u.id] || null };
     }),
     relatos: relatos.filter(minhas).sort(byNewest).slice(0, admin ? 300 : 100).map(numRelato_),
-    // inventário de todos: cada irmão precisa ver os itens do outro para propor trocas
-    resgates: resgates.sort(byNewest).slice(0, 300).map(function (x) {
+    resgates: resgates.filter(minhas).sort(byNewest).slice(0, 300).map(function (x) {
       x.preco = Number(x.preco); return x;
     }),
-    trocas: rows_('Trocas').filter(function (t) { return admin || t.de === me || t.para === me; })
-      .sort(byNewest).slice(0, 100).map(numTroca_),
     chat: ultimasMsgs_(80),
     vistos: vistos_(usuarios),
     loja: rows_('Loja').filter(function (i) { return i.ativo !== 'false'; }).map(function (i) {
@@ -134,12 +128,6 @@ function bootstrap_(r) {
       .sort(function (a, b) { return a.data < b.data ? 1 : -1; }).slice(0, 50)
       .map(function (m) { m.valor = Number(m.valor); return m; }),
   };
-}
-
-function numTroca_(t) {
-  t.dar_valor = Number(t.dar_valor || 0);
-  t.pedir_valor = Number(t.pedir_valor || 0);
-  return t;
 }
 
 function numRelato_(x) {
@@ -366,14 +354,14 @@ function apagarMsg_(r) {
   const row = findRow_('Mensagens', r.id);
   const m = rowObj_('Mensagens', row);
   if (m.usuario !== me && me !== ADMIN) throw new Error('Só dá para apagar as suas');
-  if (['pix', 'troca', 'sistema'].indexOf(m.tipo) >= 0) throw new Error('Essa não pode ser apagada');
+  if (['pix', 'sistema'].indexOf(m.tipo) >= 0) throw new Error('Essa não pode ser apagada');
   deleteMidia_(m.midia_id);
   if (m.tipo === 'video') deleteMidia_(m.ref);
   setFields_('Mensagens', row, { tipo: 'apagada', texto: '', midia_id: '', mime: '', ref: '' });
   return { ok: true };
 }
 
-// ---------------------------------------------------------------- pix e trocas
+// ---------------------------------------------------------------- pix
 
 function saldo_(k) {
   return rows_('Movimentos').reduce(function (s, m) {
@@ -395,60 +383,6 @@ function pix_(r) {
   addMov_(para, 'pix_recebido', valor, id);
   addMsg_(de, 'pix', String(r.texto || '').slice(0, 200), '', '', para + ':' + valor);
   return { id: id };
-}
-
-/** Proposta de troca: "eu dou itens + R$ e quero itens + R$". Nada é reservado até o outro aceitar. */
-function propor_(r) {
-  const de = checkKid_(r.usuario);
-  const para = outro_(de);
-  const dar = (r.dar || []).map(String), pedir = (r.pedir || []).map(String);
-  const darValor = Math.max(0, Math.round(Number(r.darValor || 0)));
-  const pedirValor = Math.max(0, Math.round(Number(r.pedirValor || 0)));
-  if (!dar.length && !pedir.length) throw new Error('Escolha pelo menos um item');
-  validaTroca_(de, para, dar, pedir, darValor, 0);
-  const id = uid_(), agora = new Date().toISOString();
-  sheet_('Trocas').appendRow([id, de, para, dar.join(','), darValor, pedir.join(','), pedirValor, 'pendente', agora, agora]);
-  addMsg_(de, 'troca', '', '', '', id);
-  return { id: id };
-}
-
-function validaTroca_(de, para, dar, pedir, darValor, pedirValor) {
-  const inv = rows_('Resgates');
-  const confere = function (id, k) {
-    const x = inv.filter(function (i) { return i.id === id; })[0];
-    if (!x || x.usuario !== k || x.status !== 'pendente') throw new Error('Um dos itens não está mais na mochila');
-  };
-  dar.forEach(function (id) { confere(id, de); });
-  pedir.forEach(function (id) { confere(id, para); });
-  if (darValor && saldo_(de) < darValor) throw new Error('Saldo insuficiente de ' + nome_(de));
-  if (pedirValor && saldo_(para) < pedirValor) throw new Error('Saldo insuficiente de ' + nome_(para));
-}
-
-function trocaStatus_(r) {
-  const me = checkUser_(r.usuario);
-  const row = findRow_('Trocas', r.id);
-  const t = numTroca_(rowObj_('Trocas', row));
-  if (t.status !== 'pendente') throw new Error('Essa troca já foi resolvida');
-  const agora = new Date().toISOString();
-
-  if (r.status === 'aceita') {
-    if (me !== t.para) throw new Error('Só quem recebeu pode aceitar');
-    const dar = t.dar_itens ? t.dar_itens.split(',') : [];
-    const pedir = t.pedir_itens ? t.pedir_itens.split(',') : [];
-    validaTroca_(t.de, t.para, dar, pedir, t.dar_valor, t.pedir_valor);
-    dar.forEach(function (id) { setFields_('Resgates', findRow_('Resgates', id), { usuario: t.para, atualizado_em: agora }); });
-    pedir.forEach(function (id) { setFields_('Resgates', findRow_('Resgates', id), { usuario: t.de, atualizado_em: agora }); });
-    if (t.dar_valor) { addMov_(t.de, 'troca', -t.dar_valor, t.id); addMov_(t.para, 'troca', t.dar_valor, t.id); }
-    if (t.pedir_valor) { addMov_(t.para, 'troca', -t.pedir_valor, t.id); addMov_(t.de, 'troca', t.pedir_valor, t.id); }
-  } else if (r.status === 'recusada') {
-    if (me !== t.para) throw new Error('Só quem recebeu pode recusar');
-  } else if (r.status === 'cancelada') {
-    if (me !== t.de && me !== ADMIN) throw new Error('Só quem propôs pode cancelar');
-  } else {
-    throw new Error('Status inválido');
-  }
-  setFields_('Trocas', row, { status: r.status, atualizado_em: agora });
-  return { ok: true };
 }
 
 // ---------------------------------------------------------------- mídia
@@ -509,7 +443,7 @@ function sheet_(name) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(name);
   if (!sh && name !== 'Usuarios' && SHEETS[name]) {
-    // abas novas (Mensagens, Trocas…) nascem sozinhas, sem precisar rodar setup() de novo
+    // abas novas (ex.: Mensagens) nascem sozinhas, sem precisar rodar setup() de novo
     sh = ss.insertSheet(name);
     sh.appendRow(SHEETS[name]);
     sh.setFrozenRows(1);

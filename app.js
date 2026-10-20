@@ -24,6 +24,18 @@
     { e: '🎁', t: '1º',   ok: s => s.resgatesEntregues >= 1 },
   ];
 
+  // ícones (Lucide, ISC) + logo oficial do Pix (Simple Icons, CC0)
+  const svg = (d, fill) => `<svg viewBox="0 0 24 24" ${fill ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'} aria-hidden="true">${d}</svg>`;
+  const ICON = {
+    home: svg('<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    loja: svg('<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>'),
+    mochila: svg('<path d="M4 10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 10h8"/><path d="M8 18h8"/><path d="M8 22v-6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>'),
+    chat: svg('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'),
+    rank: svg('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>'),
+    pix: svg('<path d="M5.283 18.36a3.505 3.505 0 0 0 2.493-1.032l3.6-3.6a.684.684 0 0 1 .946 0l3.613 3.613a3.504 3.504 0 0 0 2.493 1.032h.71l-4.56 4.56a3.647 3.647 0 0 1-5.156 0L4.85 18.36ZM18.428 5.627a3.505 3.505 0 0 0-2.493 1.032l-3.613 3.614a.67.67 0 0 1-.946 0l-3.6-3.6A3.505 3.505 0 0 0 5.283 5.64h-.434l4.573-4.572a3.646 3.646 0 0 1 5.156 0l4.559 4.559ZM1.068 9.422 3.79 6.699h1.492a2.483 2.483 0 0 1 1.744.722l3.6 3.6a1.73 1.73 0 0 0 2.443 0l3.614-3.613a2.482 2.482 0 0 1 1.744-.723h1.767l2.737 2.737a3.646 3.646 0 0 1 0 5.156l-2.736 2.736h-1.768a2.482 2.482 0 0 1-1.744-.722l-3.613-3.613a1.77 1.77 0 0 0-2.444 0l-3.6 3.6a2.483 2.483 0 0 1-1.744.722H3.791l-2.723-2.723a3.646 3.646 0 0 1 0-5.156"/>', true),
+  };
+  const PIX = `<span class="pix-logo">${ICON.pix}</span>`;
+
   const S = { me: null, data: null, tab: 'home', rank: 'saldo', adminTab: 'fila', loading: false, chat: { msgs: [], vistos: {} }, draft: '' };
   const media = new Map();      // id -> dataURL
   const pending = new Map();    // id -> Promise
@@ -440,14 +452,15 @@
     if (S.tab === 'mochila') body = mochila();
     const lidas = naoLidas();
     const mochilaN = S.data.resgates.filter(x => x.usuario === S.me && x.status === 'pendente').length;
-    const trocaN = (S.data.trocas || []).filter(t => t.status === 'pendente' && t.para === S.me).length;
+    const tabBtn = (t, label, dot) => `<button data-tab="${t}" ${t === 'chat' ? 'data-badge="chat"' : ''} class="${S.tab === t ? 'on' : ''}" onclick="A.tab('${t}')" aria-label="${label}">
+        ${ICON[t]}<small>${label}</small>${dot ? `<span class="dot">${dot}</span>` : ''}</button>`;
     const nav = `<nav class="nav">
         <span class="nav-ind"></span>
-        <button data-tab="home" class="${S.tab === 'home' ? 'on' : ''}" onclick="A.tab('home')" aria-label="Início">🏠${refazer ? `<span class="dot">${refazer}</span>` : ''}</button>
-        <button data-tab="loja" class="${S.tab === 'loja' ? 'on' : ''}" onclick="A.tab('loja')" aria-label="Loja">🛍️</button>
-        <button data-tab="mochila" class="${S.tab === 'mochila' ? 'on' : ''}" onclick="A.tab('mochila')" aria-label="Mochila">🎒${trocaN ? `<span class="dot">${trocaN}</span>` : mochilaN ? `<span class="dot soft">${mochilaN}</span>` : ''}</button>
-        <button data-tab="chat" data-badge="chat" class="${S.tab === 'chat' ? 'on' : ''}" onclick="A.tab('chat')" aria-label="Chat">💬${lidas && S.tab !== 'chat' ? `<span class="dot">${lidas}</span>` : ''}</button>
-        <button data-tab="rank" class="${S.tab === 'rank' ? 'on' : ''}" onclick="A.tab('rank')" aria-label="Ranking">🏆</button>
+        ${tabBtn('home', 'Início', refazer)}
+        ${tabBtn('loja', 'Loja')}
+        ${tabBtn('mochila', 'Mochila', mochilaN)}
+        ${tabBtn('chat', 'Chat', S.tab !== 'chat' && lidas)}
+        ${tabBtn('rank', 'Ranking')}
       </nav>`;
     if (S.tab === 'chat') return chatPage() + nav;
 
@@ -464,7 +477,7 @@
           <div class="shine"></div>
           <div class="coins">${[12, 34, 58, 80].map((l, i) => `<i style="left:${l}%;bottom:10px;animation-delay:${i * 1.5}s">🪙</i>`).join('')}</div>
           <div class="lbl">💰 <span class="eyebrow">saldo</span>
-            <button class="pix-btn" onclick="event.stopPropagation();A.pix()" aria-label="Pix">💸</button></div>
+            <button class="pix-btn" onclick="event.stopPropagation();A.pix()" aria-label="Pix">${ICON.pix}<span>Pix</span></button></div>
           <div class="val" data-count="${st.saldo || 0}" data-key="saldo">${brl(st.saldo)}</div>
           <div class="chips">
             <span class="chip">📅 <span class="mono">${brl(st.semana)}</span></span>
@@ -771,9 +784,7 @@
     return `
       <div class="section-title">🎒 Na mochila, esperando você <span class="count">${pend.length}</span></div>
       ${pend.length ? `<div class="list">${pend.map(x => resgateRow(x, true)).join('')}</div>` : '<p class="muted">Nenhum item esperando.</p>'}
-      <p class="muted small">Comprou, fica na mochila até você marcar <b>Atendi</b>. Eles podem trocar itens da mochila entre si. Se cancelar, o valor volta para o saldo de quem estiver com o item.</p>
-      ${(S.data.trocas || []).filter(t => t.status === 'pendente').length ? `<div class="section-title">🔄 Trocas em aberto</div>
-        <div class="list">${S.data.trocas.filter(t => t.status === 'pendente').map(t => `<div class="card">${trocaCard(t)}</div>`).join('')}</div>` : ''}
+      <p class="muted small">Comprou, fica na mochila até você marcar <b>Atendi</b>. Se cancelar, o valor volta para o saldo.</p>
       ${hist.length ? `<div class="section-title">📜 Histórico</div><div class="list">${hist.map(x => resgateRow(x, true)).join('')}</div>` : ''}`;
   }
 
@@ -900,7 +911,7 @@
     } catch (err) { btn.disabled = false; btn.textContent = '✅ Aprovar'; toast('⚠️ ' + err.message, true); }
   }
 
-  // ------------------------------------------------------------ MOCHILA / PIX / TROCAS
+  // ------------------------------------------------------------ MOCHILA / PIX
   const outro = k => (k === 'cesar' ? 'arthur' : 'cesar');
   const itemPic = (x, cls = '') =>
     `<div class="pic ${cls}" ${x.imagem_id ? `data-media="${x.imagem_id}"` : ''}><span>${esc(x.emoji || '🎁')}</span></div>`;
@@ -910,7 +921,6 @@
     const meus = S.data.resgates.filter(x => x.usuario === S.me);
     const pend = meus.filter(x => x.status === 'pendente');
     const feitos = meus.filter(x => x.status === 'entregue');
-    const trocas = (S.data.trocas || []).filter(t => t.status === 'pendente');
     return `
       ${sectionTitle('🎒', 'Mochila', pend.length)}
       ${pend.length ? `<div class="inv-grid">${pend.map(x => `
@@ -918,52 +928,23 @@
           <span class="badge pendente inv-st"><span class="live"></span>⏳</span>
           <div class="body"><div class="nm">${esc(x.nome)}</div><div class="pr">${brl(x.preco)}</div></div>
         </div>`).join('')}</div>` : `<div class="empty"><span class="big">🎒</span></div>`}
-      <div class="row mt duo">
-        <button class="btn big grow" onclick="A.pix()">💸</button>
-        <button class="btn big grow" onclick="A.troca()">🔄</button>
-      </div>
-      ${trocas.length ? `${sectionTitle('🔄', '', trocas.length)}<div class="list">${trocas.map(t => `<div class="card">${trocaCard(t)}</div>`).join('')}</div>` : ''}
       ${feitos.length ? `${sectionTitle('✅', '', feitos.length)}<div class="list">${feitos.map(x => `
         <div class="card table-row"><div style="font-size:28px">${esc(x.emoji || '🎁')}</div>
           <div class="grow"><div style="font-weight:700">${esc(x.nome)}</div><div class="muted small">${quando(x.atualizado_em)}</div></div>
           <span class="badge entregue">🎁 ✅</span></div>`).join('')}</div>` : ''}`;
   }
 
-  function trocaCard(t) {
-    if (!t) return '<div class="txt">🔄</div>';
-    const itens = ids => String(ids || '').split(',').filter(Boolean)
-      .map(id => S.data.resgates.find(x => x.id === id) || { emoji: '🎁', nome: '?' });
-    const lado = (k, ids, v) => {
-      const its = itens(ids);
-      return `<div class="tside">${avatar(k, 'xs')}<div class="titems">
-        ${its.map(x => `<span class="tit">${esc(x.emoji || '🎁')}<small>${esc(x.nome)}</small></span>`).join('')}
-        ${v ? `<span class="tit money">💰<small class="mono">${brl(v)}</small></span>` : ''}
-        ${!its.length && !v ? '<span class="muted">—</span>' : ''}</div></div>`;
-    };
-    const ico = { pendente: '⏳', aceita: '✅', recusada: '❌', cancelada: '↩️' }[t.status];
-    const cls = { pendente: 'pendente', aceita: 'aprovado', recusada: 'cancelado', cancelada: 'cancelado' }[t.status];
-    let acts = '';
-    if (t.status === 'pendente') {
-      if (S.me === t.para) acts = `<button class="btn" onclick="A.trocaStatus('${t.id}','recusada')" aria-label="Recusar">❌</button>
-        <button class="btn ok grow" onclick="A.trocaStatus('${t.id}','aceita')" aria-label="Aceitar">✅ 🤝</button>`;
-      else if (S.me === t.de || S.me === ADMIN) acts = `<button class="btn" style="margin-left:auto" onclick="A.trocaStatus('${t.id}','cancelada')" aria-label="Cancelar">↩️</button>`;
-    }
-    return `<div class="troca">${lado(t.de, t.dar_itens, t.dar_valor)}<div class="tx">⇅</div>${lado(t.para, t.pedir_itens, t.pedir_valor)}
-      <div class="row tfoot"><span class="badge ${cls}">${t.status === 'pendente' ? '<span class="live"></span>' : ''}🔄 ${ico}</span>${acts}</div></div>`;
-  }
-
   function pixSheet() {
     const saldo = user(S.me).stats?.saldo || 0;
     const para = outro(S.me);
     const sh = openSheet(`
-      <h2>💸 Pix<button class="btn ghost close" data-a="close">✖</button></h2>
+      <h2>${PIX} Pix<button class="btn ghost close" data-a="close">✖</button></h2>
       <div class="pix-to">${avatar(S.me, 'md')}<span class="arrow">➜</span>${avatar(para, 'md')}</div>
       <div class="money-in big-money"><span>R$</span><input name="v" inputmode="decimal" placeholder="0,00"></div>
       <div class="quick">${['0,50', '1,00', '2,00', '5,00', '10,00'].map(v => `<button data-q="${v}">${v}</button>`).join('')}
         <button data-q="${(saldo / 100).toFixed(2).replace('.', ',')}">💰 tudo</button></div>
       <div class="muted small mono" style="text-align:center;margin:10px 0">💰 ${brl(saldo)}</div>
-      <input class="input" name="msg" maxlength="200" placeholder="💬">
-      <button class="btn ok big mt" style="width:100%" data-a="send">✅ 💸</button>`);
+      <button class="btn pix big mt" style="width:100%" data-a="send">${ICON.pix} Enviar</button>`);
     sh.onclick = async e => {
       const q = e.target.closest('[data-q]');
       if (q) { sh.querySelector('[name=v]').value = q.dataset.q; return; }
@@ -971,69 +952,18 @@
       if (!b) return;
       if (b.dataset.a === 'close') return closeSheet();
       const valor = parseMoney(sh.querySelector('[name=v]').value);
-      if (!(valor >= 1)) return toast('💸 ?', true);
+      if (!(valor >= 1)) return toast('Digite o valor', true);
       if (valor > saldo) return toast('🔒 ' + brl(saldo), true);
       b.disabled = true;
       b.innerHTML = '<div class="spin sm"></div>';
       try {
-        await api('pix', { valor, texto: sh.querySelector('[name=msg]').value.trim() });
+        await api('pix', { valor });
         closeSheet();
-        confetti(['💸', '💰', '🪙', '✨']);
-        toast(`💸 ${brl(valor)} ➜ ${user(para).nome}`);
+        confetti(['💰', '🪙', '✨']);
+        toast(`Pix ${brl(valor)} ➜ ${user(para).nome}`);
         load(true);
-      } catch (err) { b.disabled = false; b.textContent = '✅ 💸'; toast('⚠️ ' + err.message, true); }
+      } catch (err) { b.disabled = false; b.innerHTML = `${ICON.pix} Enviar`; toast('⚠️ ' + err.message, true); }
     };
-  }
-
-  function trocaSheet() {
-    const para = outro(S.me);
-    const st = { dar: new Set(), pedir: new Set() };
-    const inv = k => S.data.resgates.filter(x => x.usuario === k && x.status === 'pendente');
-    const grid = (k, set) => inv(k).length
-      ? `<div class="pick-items">${inv(k).map(x => `<button class="pi" data-pi="${set}:${x.id}">${esc(x.emoji || '🎁')}<small>${esc(x.nome)}</small></button>`).join('')}</div>`
-      : '<div class="muted small" style="padding:8px 2px">🎒 —</div>';
-    const sh = openSheet(`
-      <h2>🔄 Troca<button class="btn ghost close" data-a="close">✖</button></h2>
-      <div class="tsec"><div class="row">${avatar(S.me, 'sm')}<b>📤</b></div>${grid(S.me, 'dar')}
-        <div class="money-in sm"><span>+ R$</span><input name="darValor" inputmode="decimal" placeholder="0,00"></div></div>
-      <div class="tx big">⇅</div>
-      <div class="tsec"><div class="row">${avatar(para, 'sm')}<b>📥</b></div>${grid(para, 'pedir')}
-        <div class="money-in sm"><span>+ R$</span><input name="pedirValor" inputmode="decimal" placeholder="0,00"></div></div>
-      <button class="btn ok big mt" style="width:100%" data-a="send">✅ 🔄</button>`);
-    hydrate(sh);
-    sh.onclick = async e => {
-      const pi = e.target.closest('[data-pi]');
-      if (pi) {
-        const [set, id] = pi.dataset.pi.split(':');
-        st[set].has(id) ? st[set].delete(id) : st[set].add(id);
-        pi.classList.toggle('on', st[set].has(id));
-        navigator.vibrate?.(8);
-        return;
-      }
-      const b = e.target.closest('[data-a]');
-      if (!b) return;
-      if (b.dataset.a === 'close') return closeSheet();
-      const darValor = parseMoney(sh.querySelector('[name=darValor]').value) || 0;
-      const pedirValor = parseMoney(sh.querySelector('[name=pedirValor]').value) || 0;
-      if (!st.dar.size && !st.pedir.size) return toast('🎁 ?', true);
-      b.disabled = true;
-      b.innerHTML = '<div class="spin sm"></div>';
-      try {
-        await api('propor', { dar: [...st.dar], pedir: [...st.pedir], darValor, pedirValor });
-        closeSheet();
-        toast('🔄 ➜ ' + user(para).nome);
-        load(true);
-      } catch (err) { b.disabled = false; b.textContent = '✅ 🔄'; toast('⚠️ ' + err.message, true); }
-    };
-  }
-
-  async function trocaStatus(id, status) {
-    if (status === 'aceita' && !confirm('🤝 ✅ ?')) return;
-    try {
-      await api('trocaStatus', { id, status });
-      if (status === 'aceita') confetti(['🤝', '🔄', '🎁', '✨']);
-      load(true);
-    } catch (err) { toast('⚠️ ' + err.message, true); }
   }
 
   // ------------------------------------------------------------ CHAT
@@ -1102,12 +1032,10 @@
           <span class="fico">📄</span><span class="fname">${esc(m.ref || 'arquivo')}</span><span>${m.pending ? '<div class="spin sm"></div>' : '⬇️'}</span></button>`;
       case 'pix': {
         const [para, v] = String(m.ref).split(':');
-        return `<div class="bpix"><div class="pix-ico">💸</div><div class="grow"><div class="pv mono">${brl(v)}</div>
+        return `<div class="bpix"><div class="pix-ico">${ICON.pix}</div><div class="grow"><div class="pv mono">${brl(v)}</div>
           <div class="pto">➜ ${avatar(para, 'xs')}<b style="color:${user(para).cor}">${esc(user(para).nome)}</b></div></div></div>
           ${m.texto ? `<div class="txt">${esc(m.texto)}</div>` : ''}`;
       }
-      case 'troca':
-        return trocaCard((S.data.trocas || []).find(t => t.id === m.ref));
       case 'apagada':
         return '<div class="txt del">🚫</div>';
     }
@@ -1124,7 +1052,7 @@
     const first = !!sep || !prev || prev.usuario !== m.usuario || prev.tipo === 'sistema'
       || new Date(m.criado_em) - new Date(prev.criado_em) > 5 * 60e3;
     const u = user(m.usuario);
-    const card = ['pix', 'troca'].includes(m.tipo);
+    const card = m.tipo === 'pix';
     return sep + `<div class="msg ${mine ? 'me' : 'them'} ${first ? 'first' : ''} t-${m.tipo} ${m.pending ? 'pending' : ''}" data-mid="${m.id}" style="--uc:${u.cor}">
       ${mine ? '' : first ? avatar(m.usuario, 'xs') : '<span class="av-sp"></span>'}
       <div class="bubble ${card ? 'cardish' : ''}">
@@ -1184,8 +1112,8 @@
   function drawChat(force) {
     const list = $app.querySelector('.chat-list');
     if (!list) return;
-    const msgs = S.chat.msgs;
-    const sig = JSON.stringify([msgs.map(m => m.id + m.tipo + (m.pending ? 1 : 0)), S.chat.vistos, (S.data.trocas || []).map(t => t.id + t.status)]);
+    const msgs = S.chat.msgs.filter(m => m.tipo !== 'troca');
+    const sig = JSON.stringify([msgs.map(m => m.id + m.tipo + (m.pending ? 1 : 0)), S.chat.vistos]);
     if (!force && sig === S.chat.sig) return;
     if (!force && !player.paused) return; // não corta o áudio que está tocando
     S.chat.sig = sig;
@@ -1211,8 +1139,8 @@
       mergeVistos(res.vistos);
       if (marcar) S.chat.vistos[S.me] = new Date().toISOString();
       if (!first && novasDeOutros) navigator.vibrate?.(25);
-      // pix/troca novos mudam saldo e mochila: busca o resto em segundo plano
-      if (res.msgs.some(m => ['pix', 'troca', 'sistema'].includes(m.tipo) && m.usuario !== S.me) && !first) load(true);
+      // pix novos mudam saldo e mochila: busca o resto em segundo plano
+      if (res.msgs.some(m => ['pix', 'sistema'].includes(m.tipo) && m.usuario !== S.me) && !first) load(true);
       drawChat();
       badges();
     } catch (e) { console.warn(e); }
@@ -1330,8 +1258,7 @@
         <label class="att" style="--c:#ef4444">📷<input type="file" accept="image/*" capture="environment" hidden></label>
         <label class="att" style="--c:#f97316">🎥<input type="file" accept="video/*" capture="environment" hidden></label>
         <label class="att" style="--c:#3b82f6">📄<input type="file" hidden></label>
-        ${kid ? `<button class="att" style="--c:#22c55e" data-a="pix">💸</button>
-        <button class="att" style="--c:#eab308" data-a="troca">🔄</button>` : ''}
+        ${kid ? `<button class="att pix-att" style="--c:#32bcad" data-a="pix">${ICON.pix}</button>` : ''}
       </div>`);
     sh.querySelectorAll('input[type=file]').forEach(inp => {
       inp.onchange = () => { const fs = [...inp.files]; closeSheet(); fs.forEach(enviarArquivo); };
@@ -1340,7 +1267,6 @@
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'close') closeSheet();
       if (a === 'pix') pixSheet();
-      if (a === 'troca') trocaSheet();
     };
   }
 
@@ -1428,7 +1354,7 @@
   const apagarMsg = async el => {
     const id = el.dataset.mid;
     const m = S.chat.msgs.find(x => x.id === id);
-    if (!m || m.pending || ['pix', 'troca', 'sistema', 'apagada'].includes(m.tipo)) return;
+    if (!m || m.pending || ['pix', 'sistema', 'apagada'].includes(m.tipo)) return;
     if (m.usuario !== S.me && S.me !== ADMIN) return;
     navigator.vibrate?.(40);
     if (!confirm('🗑️ ?')) return;
@@ -1454,9 +1380,8 @@
     tab: t => { if (S.tab === t) return; S.tab = t; render(true); if (t !== 'chat') scrollTo({ top: 0, behavior: 'smooth' }); navigator.vibrate?.(8); },
     adminTab: t => { if (S.adminTab === t) return; S.adminTab = t; render(true); },
     rank: k => { S.rank = k; render(true); },
-    compose, buy, editItem, refazer, aprovar, trocaStatus,
+    compose, buy, editItem, refazer, aprovar,
     pix: () => pixSheet(),
-    troca: () => trocaSheet(),
     play: (id, btn) => playMedia(id, btn),
     zoomMedia: async id => { await getMedia([id]); media.has(id) && zoom(media.get(id)); },
     gallery: async (ids, start = 0) => {
