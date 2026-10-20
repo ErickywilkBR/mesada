@@ -15,12 +15,14 @@ const KIDS = ['cesar', 'arthur'];
 const ADMIN = 'ericky';
 
 const SHEETS = {
-  Usuarios:   ['id', 'nome', 'cor', 'foto_id'],
+  Usuarios:   ['id', 'nome', 'cor', 'foto_id', 'chat_visto'],
   Relatos:    ['id', 'usuario', 'criado_em', 'foto_id', 'audio_id', 'status', 'nota', 'valor', 'resposta_audio_id', 'avaliado_em', 'tentativas'],
   Midia:      ['midia_id', 'parte', 'total', 'mime', 'dados'],
   Loja:       ['id', 'nome', 'emoji', 'preco', 'imagem_id', 'ativo'],
   Resgates:   ['id', 'usuario', 'item_id', 'nome', 'emoji', 'preco', 'status', 'criado_em', 'atualizado_em'],
   Movimentos: ['id', 'usuario', 'tipo', 'valor', 'ref', 'data'],
+  Mensagens:  ['id', 'usuario', 'criado_em', 'tipo', 'texto', 'midia_id', 'mime', 'ref'],
+  Trocas:     ['id', 'de', 'para', 'dar_itens', 'dar_valor', 'pedir_itens', 'pedir_valor', 'status', 'criado_em', 'atualizado_em'],
 };
 
 /** Rode uma vez pelo editor: cria abas, cabeçalhos e usuários. */
@@ -31,6 +33,9 @@ function setup() {
     if (sh.getLastRow() === 0) {
       sh.appendRow(SHEETS[name]);
       sh.setFrozenRows(1);
+    } else {
+      // colunas novas entram no fim do cabeçalho de abas que já existiam
+      sh.getRange(1, 1, 1, SHEETS[name].length).setValues([SHEETS[name]]);
     }
     sh.getRange(1, 1, sh.getMaxRows(), SHEETS[name].length).setNumberFormat('@');
   });
@@ -72,7 +77,7 @@ function doGet() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-const READ_ONLY = ['bootstrap', 'midia'];
+const READ_ONLY = ['bootstrap', 'midia', 'chat'];
 
 const API = {
   bootstrap: bootstrap_,
@@ -84,6 +89,12 @@ const API = {
   lojaRemover: lojaRemover_,
   resgatar: resgatar_,
   resgateStatus: resgateStatus_,
+  chat: chat_,
+  enviarMsg: enviarMsg_,
+  apagarMsg: apagarMsg_,
+  pix: pix_,
+  propor: propor_,
+  trocaStatus: trocaStatus_,
 };
 
 // ---------------------------------------------------------------- leitura
@@ -108,9 +119,14 @@ function bootstrap_(r) {
       return { id: u.id, nome: u.nome, cor: u.cor, foto_id: u.foto_id, stats: stats[u.id] || null };
     }),
     relatos: relatos.filter(minhas).sort(byNewest).slice(0, admin ? 300 : 100).map(numRelato_),
-    resgates: resgates.filter(minhas).sort(byNewest).slice(0, 200).map(function (x) {
+    // inventário de todos: cada irmão precisa ver os itens do outro para propor trocas
+    resgates: resgates.sort(byNewest).slice(0, 300).map(function (x) {
       x.preco = Number(x.preco); return x;
     }),
+    trocas: rows_('Trocas').filter(function (t) { return admin || t.de === me || t.para === me; })
+      .sort(byNewest).slice(0, 100).map(numTroca_),
+    chat: ultimasMsgs_(80),
+    vistos: vistos_(usuarios),
     loja: rows_('Loja').filter(function (i) { return i.ativo !== 'false'; }).map(function (i) {
       i.preco = Number(i.preco); return i;
     }).sort(function (a, b) { return a.preco - b.preco; }),
@@ -118,6 +134,12 @@ function bootstrap_(r) {
       .sort(function (a, b) { return a.data < b.data ? 1 : -1; }).slice(0, 50)
       .map(function (m) { m.valor = Number(m.valor); return m; }),
   };
+}
+
+function numTroca_(t) {
+  t.dar_valor = Number(t.dar_valor || 0);
+  t.pedir_valor = Number(t.pedir_valor || 0);
+  return t;
 }
 
 function numRelato_(x) {
@@ -263,10 +285,7 @@ function resgatar_(r) {
   const item = rowObj_('Loja', findRow_('Loja', r.itemId));
   if (item.ativo === 'false') throw new Error('Item indisponível');
   const preco = Number(item.preco);
-  const saldo = rows_('Movimentos').reduce(function (s, m) {
-    return m.usuario === k ? s + Number(m.valor) : s;
-  }, 0);
-  if (saldo < preco) throw new Error('Saldo insuficiente');
+  if (saldo_(k) < preco) throw new Error('Saldo insuficiente');
 
   const id = uid_();
   const agora = new Date().toISOString();
@@ -282,12 +301,153 @@ function resgateStatus_(r) {
   if (x.status !== 'pendente') throw new Error('Resgate já finalizado');
   if (r.status === 'entregue') {
     setFields_('Resgates', row, { status: 'entregue', atualizado_em: new Date().toISOString() });
+    sistema_('🎁 ' + x.emoji + ' ' + x.nome + ' → ' + nome_(x.usuario), x.id);
   } else if (r.status === 'cancelado') {
     setFields_('Resgates', row, { status: 'cancelado', atualizado_em: new Date().toISOString() });
     addMov_(x.usuario, 'estorno', Number(x.preco), x.id);
   } else {
     throw new Error('Status inválido');
   }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- chat
+
+function ultimasMsgs_(n, desde) {
+  let msgs = rows_('Mensagens');
+  if (desde) msgs = msgs.filter(function (m) { return m.criado_em > desde; });
+  return msgs.slice(-n);
+}
+
+function vistos_(usuarios) {
+  const v = {};
+  usuarios.forEach(function (u) { v[u.id] = u.chat_visto || ''; });
+  return v;
+}
+
+/** Busca rápida do chat (polling): mensagens novas + quem já viu. Pode marcar como visto. */
+function chat_(r) {
+  const me = checkUser_(r.usuario);
+  if (r.visto) setFields_('Usuarios', findRow_('Usuarios', me), { chat_visto: new Date().toISOString() });
+  return { msgs: ultimasMsgs_(200, r.desde || ''), vistos: vistos_(rows_('Usuarios')) };
+}
+
+function enviarMsg_(r) {
+  const me = checkUser_(r.usuario);
+  const tipo = r.tipo || 'texto';
+  if (['texto', 'imagem', 'video', 'audio', 'arquivo'].indexOf(tipo) < 0) throw new Error('Tipo inválido');
+  const texto = String(r.texto || '').slice(0, 4000);
+  let midiaId = '', mime = '';
+  if (tipo !== 'texto') {
+    if (!r.midia || !r.midia.data) throw new Error('Mídia vazia');
+    midiaId = saveMidia_(r.midia);
+    mime = r.midia.mime;
+  } else if (!texto.trim()) {
+    throw new Error('Mensagem vazia');
+  }
+  // ref: nome do arquivo, ou a capa (primeiro quadro) do vídeo
+  const ref = tipo === 'video' && r.poster && r.poster.data ? saveMidia_(r.poster) : String(r.nome || '').slice(0, 120);
+  return addMsg_(me, tipo, texto, midiaId, mime, ref);
+}
+
+function addMsg_(usuario, tipo, texto, midiaId, mime, ref) {
+  const m = {
+    id: uid_(), usuario: usuario, criado_em: new Date().toISOString(), tipo: tipo,
+    texto: texto || '', midia_id: midiaId || '', mime: mime || '', ref: ref || '',
+  };
+  sheet_('Mensagens').appendRow(SHEETS.Mensagens.map(function (k) { return m[k]; }));
+  return m;
+}
+
+function sistema_(texto, ref) { return addMsg_('sistema', 'sistema', texto, '', '', ref); }
+
+function apagarMsg_(r) {
+  const me = checkUser_(r.usuario);
+  const row = findRow_('Mensagens', r.id);
+  const m = rowObj_('Mensagens', row);
+  if (m.usuario !== me && me !== ADMIN) throw new Error('Só dá para apagar as suas');
+  if (['pix', 'troca', 'sistema'].indexOf(m.tipo) >= 0) throw new Error('Essa não pode ser apagada');
+  deleteMidia_(m.midia_id);
+  if (m.tipo === 'video') deleteMidia_(m.ref);
+  setFields_('Mensagens', row, { tipo: 'apagada', texto: '', midia_id: '', mime: '', ref: '' });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- pix e trocas
+
+function saldo_(k) {
+  return rows_('Movimentos').reduce(function (s, m) {
+    return m.usuario === k ? s + Number(m.valor) : s;
+  }, 0);
+}
+
+function outro_(k) { return k === 'cesar' ? 'arthur' : 'cesar'; }
+function nome_(k) { return { cesar: 'Cesar', arthur: 'Arthur', ericky: 'Ericky' }[k] || k; }
+
+function pix_(r) {
+  const de = checkKid_(r.usuario);
+  const para = outro_(de);
+  const valor = Math.round(Number(r.valor));
+  if (!(valor >= 1)) throw new Error('Valor inválido');
+  if (saldo_(de) < valor) throw new Error('Saldo insuficiente');
+  const id = uid_();
+  addMov_(de, 'pix_enviado', -valor, id);
+  addMov_(para, 'pix_recebido', valor, id);
+  addMsg_(de, 'pix', String(r.texto || '').slice(0, 200), '', '', para + ':' + valor);
+  return { id: id };
+}
+
+/** Proposta de troca: "eu dou itens + R$ e quero itens + R$". Nada é reservado até o outro aceitar. */
+function propor_(r) {
+  const de = checkKid_(r.usuario);
+  const para = outro_(de);
+  const dar = (r.dar || []).map(String), pedir = (r.pedir || []).map(String);
+  const darValor = Math.max(0, Math.round(Number(r.darValor || 0)));
+  const pedirValor = Math.max(0, Math.round(Number(r.pedirValor || 0)));
+  if (!dar.length && !pedir.length) throw new Error('Escolha pelo menos um item');
+  validaTroca_(de, para, dar, pedir, darValor, 0);
+  const id = uid_(), agora = new Date().toISOString();
+  sheet_('Trocas').appendRow([id, de, para, dar.join(','), darValor, pedir.join(','), pedirValor, 'pendente', agora, agora]);
+  addMsg_(de, 'troca', '', '', '', id);
+  return { id: id };
+}
+
+function validaTroca_(de, para, dar, pedir, darValor, pedirValor) {
+  const inv = rows_('Resgates');
+  const confere = function (id, k) {
+    const x = inv.filter(function (i) { return i.id === id; })[0];
+    if (!x || x.usuario !== k || x.status !== 'pendente') throw new Error('Um dos itens não está mais na mochila');
+  };
+  dar.forEach(function (id) { confere(id, de); });
+  pedir.forEach(function (id) { confere(id, para); });
+  if (darValor && saldo_(de) < darValor) throw new Error('Saldo insuficiente de ' + nome_(de));
+  if (pedirValor && saldo_(para) < pedirValor) throw new Error('Saldo insuficiente de ' + nome_(para));
+}
+
+function trocaStatus_(r) {
+  const me = checkUser_(r.usuario);
+  const row = findRow_('Trocas', r.id);
+  const t = numTroca_(rowObj_('Trocas', row));
+  if (t.status !== 'pendente') throw new Error('Essa troca já foi resolvida');
+  const agora = new Date().toISOString();
+
+  if (r.status === 'aceita') {
+    if (me !== t.para) throw new Error('Só quem recebeu pode aceitar');
+    const dar = t.dar_itens ? t.dar_itens.split(',') : [];
+    const pedir = t.pedir_itens ? t.pedir_itens.split(',') : [];
+    validaTroca_(t.de, t.para, dar, pedir, t.dar_valor, t.pedir_valor);
+    dar.forEach(function (id) { setFields_('Resgates', findRow_('Resgates', id), { usuario: t.para, atualizado_em: agora }); });
+    pedir.forEach(function (id) { setFields_('Resgates', findRow_('Resgates', id), { usuario: t.de, atualizado_em: agora }); });
+    if (t.dar_valor) { addMov_(t.de, 'troca', -t.dar_valor, t.id); addMov_(t.para, 'troca', t.dar_valor, t.id); }
+    if (t.pedir_valor) { addMov_(t.para, 'troca', -t.pedir_valor, t.id); addMov_(t.de, 'troca', t.pedir_valor, t.id); }
+  } else if (r.status === 'recusada') {
+    if (me !== t.para) throw new Error('Só quem recebeu pode recusar');
+  } else if (r.status === 'cancelada') {
+    if (me !== t.de && me !== ADMIN) throw new Error('Só quem propôs pode cancelar');
+  } else {
+    throw new Error('Status inválido');
+  }
+  setFields_('Trocas', row, { status: r.status, atualizado_em: agora });
   return { ok: true };
 }
 
@@ -305,7 +465,10 @@ function saveMidia_(m) {
   const start = sh.getLastRow() + 1;
   const falta = start + values.length - 1 - sh.getMaxRows();
   if (falta > 0) sh.insertRowsAfter(sh.getMaxRows(), falta);
-  sh.getRange(start, 1, values.length, 5).setNumberFormat('@').setValues(values);
+  for (let i = 0; i < values.length; i += 100) {
+    const bloco = values.slice(i, i + 100);
+    sh.getRange(start + i, 1, bloco.length, 5).setNumberFormat('@').setValues(bloco);
+  }
   return id;
 }
 
@@ -316,10 +479,13 @@ function getMidia_(ids) {
     if (!id) return;
     const found = sh.getRange('A:A').createTextFinder(id).matchEntireCell(true).findAll();
     if (!found.length) return;
-    const parts = found.map(function (c) {
-      const v = sh.getRange(c.getRow(), 2, 1, 4).getValues()[0];
-      return { i: Number(v[0]), mime: v[2], data: String(v[3]).slice(2) };
-    }).sort(function (a, b) { return a.i - b.i; });
+    // as partes são gravadas juntas: lê o bloco inteiro numa chamada só (vídeo tem centenas)
+    const linhas = found.map(function (c) { return c.getRow(); });
+    const ini = Math.min.apply(null, linhas), fim = Math.max.apply(null, linhas);
+    const parts = sh.getRange(ini, 1, fim - ini + 1, 5).getValues()
+      .filter(function (v) { return String(v[0]) === id; })
+      .map(function (v) { return { i: Number(v[1]), mime: v[3], data: String(v[4]).slice(2) }; })
+      .sort(function (a, b) { return a.i - b.i; });
     out[id] = { mime: parts[0].mime, data: parts.map(function (p) { return p.data; }).join('') };
   });
   return out;
@@ -330,13 +496,25 @@ function deleteMidia_(id) {
   const sh = sheet_('Midia');
   const rows = sh.getRange('A:A').createTextFinder(id).matchEntireCell(true).findAll()
     .map(function (c) { return c.getRow(); }).sort(function (a, b) { return b - a; });
-  rows.forEach(function (r) { sh.deleteRow(r); });
+  if (rows.length && rows[0] - rows[rows.length - 1] === rows.length - 1) {
+    sh.deleteRows(rows[rows.length - 1], rows.length); // bloco contíguo: uma chamada só
+  } else {
+    rows.forEach(function (r) { sh.deleteRow(r); });
+  }
 }
 
 // ---------------------------------------------------------------- helpers
 
 function sheet_(name) {
-  const sh = SpreadsheetApp.getActive().getSheetByName(name);
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(name);
+  if (!sh && name !== 'Usuarios' && SHEETS[name]) {
+    // abas novas (Mensagens, Trocas…) nascem sozinhas, sem precisar rodar setup() de novo
+    sh = ss.insertSheet(name);
+    sh.appendRow(SHEETS[name]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), SHEETS[name].length).setNumberFormat('@');
+  }
   if (!sh) throw new Error('Aba ' + name + ' não existe — rode setup()');
   return sh;
 }

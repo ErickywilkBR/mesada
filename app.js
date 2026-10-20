@@ -24,7 +24,7 @@
     { e: '🎁', t: '1º',   ok: s => s.resgatesEntregues >= 1 },
   ];
 
-  const S = { me: null, data: null, tab: 'home', rank: 'saldo', adminTab: 'fila', loading: false };
+  const S = { me: null, data: null, tab: 'home', rank: 'saldo', adminTab: 'fila', loading: false, chat: { msgs: [], vistos: {} }, draft: '' };
   const media = new Map();      // id -> dataURL
   const pending = new Map();    // id -> Promise
   const review = {};            // relatoId -> { nota, valor }
@@ -281,7 +281,10 @@
     }
     S.me = id;
     S.data = null;
+    S.json = null;
     S.tab = 'home';
+    S.chat = { msgs: [], vistos: {} };
+    S.draft = '';
     const cor = USERS[id].cor;
     const n = parseInt(cor.slice(1), 16);
     const r = document.documentElement.style;
@@ -305,9 +308,15 @@
       // atualização automática: se a pessoa começou a mexer enquanto buscava, descarta e tenta depois
       if (auto && busy()) return;
       const saldoAntes = S.data && me !== ADMIN ? user(me).stats?.saldo : null;
+      const lidasAntes = S.data ? naoLidas() : 0;
       S.json = json;
       S.data = data;
+      mergeMsgs(data.chat || []);
+      mergeVistos(data.vistos);
       if (auto && saldoAntes != null && (user(me).stats?.saldo || 0) > saldoAntes) confetti(['💰', '🪙', '⭐']);
+      if (auto && naoLidas() > lidasAntes) navigator.vibrate?.([20, 60, 20]);
+      // chat aberto tem atualização própria: só atualiza a lista e os contadores, sem redesenhar a tela
+      if (silent && chatOpen()) { drawChat(); badges(); return; }
       const y = scrollY;
       render(!silent);
       if (silent) scrollTo(0, y);
@@ -330,6 +339,7 @@
     if (!player.paused) return true;                                       // ouvindo áudio
     if (Object.values(review).some(r => r.nota || r.valor)) return true;   // Ericky avaliando um card
     if (Date.now() - S.lastTouch < 4000) return true;                      // acabou de tocar na tela
+    if (S.recording) return true;                                          // gravando áudio no chat
     return false;
   }
 
@@ -360,6 +370,7 @@
     countUp();
     navIndicator();
     hydrate($app);
+    if (chatOpen()) mountChat();
   }
 
   // saldo sobe animado do último valor mostrado até o novo
@@ -385,13 +396,12 @@
     const nav = $app.querySelector('.nav');
     if (!nav) return;
     const ind = nav.querySelector('.nav-ind');
-    const idx = ['home', 'loja', 'rank'].indexOf(S.tab);
-    const prev = ['home', 'loja', 'rank'].indexOf(S.prevTab ?? S.tab);
+    const x = t => (nav.querySelector(`[data-tab="${t}"]`)?.offsetLeft ?? 7) - 7;
     ind.style.transition = 'none';
-    ind.style.transform = `translateX(${prev * 76}px)`;
+    ind.style.transform = `translateX(${x(S.prevTab ?? S.tab)}px)`;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       ind.style.transition = '';
-      ind.style.transform = `translateX(${idx * 76}px)`;
+      ind.style.transform = `translateX(${x(S.tab)}px)`;
     }));
     S.prevTab = S.tab;
   }
@@ -421,6 +431,19 @@
     if (S.tab === 'home') body = kidHome();
     if (S.tab === 'loja') body = kidLoja();
     if (S.tab === 'rank') body = rankView();
+    if (S.tab === 'mochila') body = mochila();
+    const lidas = naoLidas();
+    const mochilaN = S.data.resgates.filter(x => x.usuario === S.me && x.status === 'pendente').length;
+    const trocaN = (S.data.trocas || []).filter(t => t.status === 'pendente' && t.para === S.me).length;
+    const nav = `<nav class="nav">
+        <span class="nav-ind"></span>
+        <button data-tab="home" class="${S.tab === 'home' ? 'on' : ''}" onclick="A.tab('home')" aria-label="Início">🏠${refazer ? `<span class="dot">${refazer}</span>` : ''}</button>
+        <button data-tab="loja" class="${S.tab === 'loja' ? 'on' : ''}" onclick="A.tab('loja')" aria-label="Loja">🛍️</button>
+        <button data-tab="mochila" class="${S.tab === 'mochila' ? 'on' : ''}" onclick="A.tab('mochila')" aria-label="Mochila">🎒${trocaN ? `<span class="dot">${trocaN}</span>` : mochilaN ? `<span class="dot soft">${mochilaN}</span>` : ''}</button>
+        <button data-tab="chat" data-badge="chat" class="${S.tab === 'chat' ? 'on' : ''}" onclick="A.tab('chat')" aria-label="Chat">💬${lidas && S.tab !== 'chat' ? `<span class="dot">${lidas}</span>` : ''}</button>
+        <button data-tab="rank" class="${S.tab === 'rank' ? 'on' : ''}" onclick="A.tab('rank')" aria-label="Ranking">🏆</button>
+      </nav>`;
+    if (S.tab === 'chat') return chatPage() + nav;
 
     return `
       <div class="top">
@@ -434,7 +457,8 @@
         <div class="balance" data-tilt>
           <div class="shine"></div>
           <div class="coins">${[12, 34, 58, 80].map((l, i) => `<i style="left:${l}%;bottom:10px;animation-delay:${i * 1.5}s">🪙</i>`).join('')}</div>
-          <div class="lbl">💰 <span class="eyebrow">saldo</span></div>
+          <div class="lbl">💰 <span class="eyebrow">saldo</span>
+            <button class="pix-btn" onclick="event.stopPropagation();A.pix()" aria-label="Pix">💸</button></div>
           <div class="val" data-count="${st.saldo || 0}" data-key="saldo">${brl(st.saldo)}</div>
           <div class="chips">
             <span class="chip">📅 <span class="mono">${brl(st.semana)}</span></span>
@@ -445,12 +469,7 @@
       </div>
       ${S.tab === 'home' ? `<button class="cta shimmer" onclick="A.compose()"><span class="ico">📸</span><span class="plus">+</span><span class="ico">🎤</span></button>` : ''}
       <div class="view">${body}</div>
-      <nav class="nav">
-        <span class="nav-ind"></span>
-        <button class="${S.tab === 'home' ? 'on' : ''}" onclick="A.tab('home')" aria-label="Início">🏠${refazer ? `<span class="dot">${refazer}</span>` : ''}</button>
-        <button class="${S.tab === 'loja' ? 'on' : ''}" onclick="A.tab('loja')" aria-label="Loja">🛍️</button>
-        <button class="${S.tab === 'rank' ? 'on' : ''}" onclick="A.tab('rank')" aria-label="Ranking">🏆</button>
-      </nav>`;
+      ${nav}`;
   }
 
   function kidHome() {
@@ -489,7 +508,6 @@
   function kidLoja() {
     const saldo = user(S.me).stats?.saldo || 0;
     const itens = S.data.loja;
-    const meus = S.data.resgates;
     return `
       ${sectionTitle('🛍️', 'Loja')}
       ${itens.length ? `<div class="shop">${itens.map(it => {
@@ -501,9 +519,7 @@
           <div class="body"><div class="nm">${esc(it.nome)}</div><div class="pr">${brl(it.preco)}</div>
           ${ok ? '' : `<div class="progress"><i style="width:${pct}%"></i></div>`}</div>
         </button>`;
-      }).join('')}</div>` : `<div class="empty"><span class="big">🏪</span></div>`}
-      ${meus.length ? `${sectionTitle('🎁', '', meus.length)}
-        <div class="list">${meus.map(x => resgateRow(x)).join('')}</div>` : ''}`;
+      }).join('')}</div>` : `<div class="empty"><span class="big">🏪</span></div>`}`;
   }
 
   function resgateRow(x, admin) {
@@ -514,7 +530,7 @@
       <div class="grow"><div style="font-weight:700">${esc(x.nome)}</div><div class="muted small">${quando(x.criado_em)}</div></div>
       <div class="mono" style="font-weight:800">${brl(x.preco)}</div>
       ${admin && x.status === 'pendente'
-        ? `<button class="btn ok" onclick="A.resgate('${x.id}','entregue')">✅</button><button class="btn" onclick="A.resgate('${x.id}','cancelado')">✖</button>`
+        ? `<button class="btn ok" onclick="A.resgate('${x.id}','entregue')">✅ Atendi</button><button class="btn" onclick="A.resgate('${x.id}','cancelado')" aria-label="Cancelar">✖</button>`
         : `<span class="badge ${x.status}">${icon}</span>`}
     </div>`;
   }
@@ -653,7 +669,9 @@
       try {
         await api('resgatar', { itemId });
         closeSheet();
-        confetti(['🎁', '🛍️', '🎉']);
+        confetti(['🎁', '🛍️', '🎉', '🎒']);
+        toast('🎒 ✅');
+        S.tab = 'mochila';
         load(true);
       } catch (err) { b.disabled = false; b.textContent = '✅ 🛒'; toast('⚠️ ' + err.message, true); }
     };
@@ -666,7 +684,8 @@
     const resg = d.resgates.filter(r => r.status === 'pendente');
     const tabs = [
       ['fila', '📥 Fila', fila.length],
-      ['resgates', '🎁 Resgates', resg.length],
+      ['resgates', '🎒 Itens', resg.length],
+      ['chat', '💬 Chat', naoLidas()],
       ['loja', '🛍️ Loja'],
       ['hist', '📜 Histórico'],
       ['rank', '🏆 Ranking'],
@@ -677,6 +696,7 @@
     if (S.adminTab === 'loja') body = adminLoja();
     if (S.adminTab === 'hist') body = adminHist();
     if (S.adminTab === 'rank') body = rankView();
+    if (S.adminTab === 'chat') body = chatPage();
 
     return `
       <div class="top">
@@ -697,7 +717,7 @@
           <div class="v" data-count="${KIDS.reduce((s, id) => s + (user(id).stats?.mes || 0), 0)}" data-key="mes-total">–</div>
           <div class="muted small mono">semana ${brl(KIDS.reduce((s, id) => s + (user(id).stats?.semana || 0), 0))}</div></div>
       </div>
-      <div class="tabs-top mt">${tabs.map(([k, t, n]) => `<button class="${S.adminTab === k ? 'on' : ''}" onclick="A.adminTab('${k}')">${t}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>
+      <div class="tabs-top mt">${tabs.map(([k, t, n]) => `<button class="${S.adminTab === k ? 'on' : ''}" ${k === 'chat' ? 'data-badge="chat"' : ''} onclick="A.adminTab('${k}')">${t}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>
       <div class="mt">${body}</div>`;
   }
 
@@ -729,9 +749,11 @@
     const pend = all.filter(x => x.status === 'pendente');
     const hist = all.filter(x => x.status !== 'pendente');
     return `
-      <div class="section-title">⏳ Pendentes <span class="count">${pend.length}</span></div>
-      ${pend.length ? `<div class="list">${pend.map(x => resgateRow(x, true)).join('')}</div>` : '<p class="muted">Nenhum resgate pendente.</p>'}
-      <p class="muted small">O saldo é reservado quando o pedido é feito. Se você cancelar, o valor volta para o saldo.</p>
+      <div class="section-title">🎒 Na mochila, esperando você <span class="count">${pend.length}</span></div>
+      ${pend.length ? `<div class="list">${pend.map(x => resgateRow(x, true)).join('')}</div>` : '<p class="muted">Nenhum item esperando.</p>'}
+      <p class="muted small">Comprou, fica na mochila até você marcar <b>Atendi</b>. Eles podem trocar itens da mochila entre si. Se cancelar, o valor volta para o saldo de quem estiver com o item.</p>
+      ${(S.data.trocas || []).filter(t => t.status === 'pendente').length ? `<div class="section-title">🔄 Trocas em aberto</div>
+        <div class="list">${S.data.trocas.filter(t => t.status === 'pendente').map(t => `<div class="card">${trocaCard(t)}</div>`).join('')}</div>` : ''}
       ${hist.length ? `<div class="section-title">📜 Histórico</div><div class="list">${hist.map(x => resgateRow(x, true)).join('')}</div>` : ''}`;
   }
 
@@ -858,13 +880,563 @@
     } catch (err) { btn.disabled = false; btn.textContent = '✅ Aprovar'; toast('⚠️ ' + err.message, true); }
   }
 
+  // ------------------------------------------------------------ MOCHILA / PIX / TROCAS
+  const outro = k => (k === 'cesar' ? 'arthur' : 'cesar');
+  const itemPic = (x, cls = '') =>
+    `<div class="pic ${cls}" ${x.imagem_id ? `data-media="${x.imagem_id}"` : ''}><span>${esc(x.emoji || '🎁')}</span></div>`;
+  const lojaItem = x => S.data.loja.find(i => i.id === x.item_id) || {};
+
+  function mochila() {
+    const meus = S.data.resgates.filter(x => x.usuario === S.me);
+    const pend = meus.filter(x => x.status === 'pendente');
+    const feitos = meus.filter(x => x.status === 'entregue');
+    const trocas = (S.data.trocas || []).filter(t => t.status === 'pendente');
+    return `
+      ${sectionTitle('🎒', 'Mochila', pend.length)}
+      ${pend.length ? `<div class="inv-grid">${pend.map(x => `
+        <div class="card item inv">${itemPic({ ...x, imagem_id: lojaItem(x).imagem_id })}
+          <span class="badge pendente inv-st"><span class="live"></span>⏳</span>
+          <div class="body"><div class="nm">${esc(x.nome)}</div><div class="pr">${brl(x.preco)}</div></div>
+        </div>`).join('')}</div>` : `<div class="empty"><span class="big">🎒</span></div>`}
+      <div class="row mt duo">
+        <button class="btn big grow" onclick="A.pix()">💸</button>
+        <button class="btn big grow" onclick="A.troca()">🔄</button>
+      </div>
+      ${trocas.length ? `${sectionTitle('🔄', '', trocas.length)}<div class="list">${trocas.map(t => `<div class="card">${trocaCard(t)}</div>`).join('')}</div>` : ''}
+      ${feitos.length ? `${sectionTitle('✅', '', feitos.length)}<div class="list">${feitos.map(x => `
+        <div class="card table-row"><div style="font-size:28px">${esc(x.emoji || '🎁')}</div>
+          <div class="grow"><div style="font-weight:700">${esc(x.nome)}</div><div class="muted small">${quando(x.atualizado_em)}</div></div>
+          <span class="badge entregue">🎁 ✅</span></div>`).join('')}</div>` : ''}`;
+  }
+
+  function trocaCard(t) {
+    if (!t) return '<div class="txt">🔄</div>';
+    const itens = ids => String(ids || '').split(',').filter(Boolean)
+      .map(id => S.data.resgates.find(x => x.id === id) || { emoji: '🎁', nome: '?' });
+    const lado = (k, ids, v) => {
+      const its = itens(ids);
+      return `<div class="tside">${avatar(k, 'xs')}<div class="titems">
+        ${its.map(x => `<span class="tit">${esc(x.emoji || '🎁')}<small>${esc(x.nome)}</small></span>`).join('')}
+        ${v ? `<span class="tit money">💰<small class="mono">${brl(v)}</small></span>` : ''}
+        ${!its.length && !v ? '<span class="muted">—</span>' : ''}</div></div>`;
+    };
+    const ico = { pendente: '⏳', aceita: '✅', recusada: '❌', cancelada: '↩️' }[t.status];
+    const cls = { pendente: 'pendente', aceita: 'aprovado', recusada: 'cancelado', cancelada: 'cancelado' }[t.status];
+    let acts = '';
+    if (t.status === 'pendente') {
+      if (S.me === t.para) acts = `<button class="btn" onclick="A.trocaStatus('${t.id}','recusada')" aria-label="Recusar">❌</button>
+        <button class="btn ok grow" onclick="A.trocaStatus('${t.id}','aceita')" aria-label="Aceitar">✅ 🤝</button>`;
+      else if (S.me === t.de || S.me === ADMIN) acts = `<button class="btn" style="margin-left:auto" onclick="A.trocaStatus('${t.id}','cancelada')" aria-label="Cancelar">↩️</button>`;
+    }
+    return `<div class="troca">${lado(t.de, t.dar_itens, t.dar_valor)}<div class="tx">⇅</div>${lado(t.para, t.pedir_itens, t.pedir_valor)}
+      <div class="row tfoot"><span class="badge ${cls}">${t.status === 'pendente' ? '<span class="live"></span>' : ''}🔄 ${ico}</span>${acts}</div></div>`;
+  }
+
+  function pixSheet() {
+    const saldo = user(S.me).stats?.saldo || 0;
+    const para = outro(S.me);
+    const sh = openSheet(`
+      <h2>💸 Pix<button class="btn ghost close" data-a="close">✖</button></h2>
+      <div class="pix-to">${avatar(S.me, 'md')}<span class="arrow">➜</span>${avatar(para, 'md')}</div>
+      <div class="money-in big-money"><span>R$</span><input name="v" inputmode="decimal" placeholder="0,00"></div>
+      <div class="quick">${['0,50', '1,00', '2,00', '5,00', '10,00'].map(v => `<button data-q="${v}">${v}</button>`).join('')}
+        <button data-q="${(saldo / 100).toFixed(2).replace('.', ',')}">💰 tudo</button></div>
+      <div class="muted small mono" style="text-align:center;margin:10px 0">💰 ${brl(saldo)}</div>
+      <input class="input" name="msg" maxlength="200" placeholder="💬">
+      <button class="btn ok big mt" style="width:100%" data-a="send">✅ 💸</button>`);
+    sh.onclick = async e => {
+      const q = e.target.closest('[data-q]');
+      if (q) { sh.querySelector('[name=v]').value = q.dataset.q; return; }
+      const b = e.target.closest('[data-a]');
+      if (!b) return;
+      if (b.dataset.a === 'close') return closeSheet();
+      const valor = parseMoney(sh.querySelector('[name=v]').value);
+      if (!(valor >= 1)) return toast('💸 ?', true);
+      if (valor > saldo) return toast('🔒 ' + brl(saldo), true);
+      b.disabled = true;
+      b.innerHTML = '<div class="spin sm"></div>';
+      try {
+        await api('pix', { valor, texto: sh.querySelector('[name=msg]').value.trim() });
+        closeSheet();
+        confetti(['💸', '💰', '🪙', '✨']);
+        toast(`💸 ${brl(valor)} ➜ ${user(para).nome}`);
+        load(true);
+      } catch (err) { b.disabled = false; b.textContent = '✅ 💸'; toast('⚠️ ' + err.message, true); }
+    };
+  }
+
+  function trocaSheet() {
+    const para = outro(S.me);
+    const st = { dar: new Set(), pedir: new Set() };
+    const inv = k => S.data.resgates.filter(x => x.usuario === k && x.status === 'pendente');
+    const grid = (k, set) => inv(k).length
+      ? `<div class="pick-items">${inv(k).map(x => `<button class="pi" data-pi="${set}:${x.id}">${esc(x.emoji || '🎁')}<small>${esc(x.nome)}</small></button>`).join('')}</div>`
+      : '<div class="muted small" style="padding:8px 2px">🎒 —</div>';
+    const sh = openSheet(`
+      <h2>🔄 Troca<button class="btn ghost close" data-a="close">✖</button></h2>
+      <div class="tsec"><div class="row">${avatar(S.me, 'sm')}<b>📤</b></div>${grid(S.me, 'dar')}
+        <div class="money-in sm"><span>+ R$</span><input name="darValor" inputmode="decimal" placeholder="0,00"></div></div>
+      <div class="tx big">⇅</div>
+      <div class="tsec"><div class="row">${avatar(para, 'sm')}<b>📥</b></div>${grid(para, 'pedir')}
+        <div class="money-in sm"><span>+ R$</span><input name="pedirValor" inputmode="decimal" placeholder="0,00"></div></div>
+      <button class="btn ok big mt" style="width:100%" data-a="send">✅ 🔄</button>`);
+    hydrate(sh);
+    sh.onclick = async e => {
+      const pi = e.target.closest('[data-pi]');
+      if (pi) {
+        const [set, id] = pi.dataset.pi.split(':');
+        st[set].has(id) ? st[set].delete(id) : st[set].add(id);
+        pi.classList.toggle('on', st[set].has(id));
+        navigator.vibrate?.(8);
+        return;
+      }
+      const b = e.target.closest('[data-a]');
+      if (!b) return;
+      if (b.dataset.a === 'close') return closeSheet();
+      const darValor = parseMoney(sh.querySelector('[name=darValor]').value) || 0;
+      const pedirValor = parseMoney(sh.querySelector('[name=pedirValor]').value) || 0;
+      if (!st.dar.size && !st.pedir.size) return toast('🎁 ?', true);
+      b.disabled = true;
+      b.innerHTML = '<div class="spin sm"></div>';
+      try {
+        await api('propor', { dar: [...st.dar], pedir: [...st.pedir], darValor, pedirValor });
+        closeSheet();
+        toast('🔄 ➜ ' + user(para).nome);
+        load(true);
+      } catch (err) { b.disabled = false; b.textContent = '✅ 🔄'; toast('⚠️ ' + err.message, true); }
+    };
+  }
+
+  async function trocaStatus(id, status) {
+    if (status === 'aceita' && !confirm('🤝 ✅ ?')) return;
+    try {
+      await api('trocaStatus', { id, status });
+      if (status === 'aceita') confetti(['🤝', '🔄', '🎁', '✨']);
+      load(true);
+    } catch (err) { toast('⚠️ ' + err.message, true); }
+  }
+
+  // ------------------------------------------------------------ CHAT
+  const CHAT_POLL_MS = 3000;
+  const MAX_VIDEO = 15 * 1024 * 1024;
+  const MAX_FILE = 10 * 1024 * 1024;
+  const chatOpen = () => !!S.data && (S.me === ADMIN ? S.adminTab === 'chat' : S.tab === 'chat');
+  const serverMsgs = () => S.chat.msgs.filter(m => !m.pending);
+  const hora = iso => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  function mergeMsgs(list) {
+    list.forEach(m => {
+      const i = S.chat.msgs.findIndex(x => x.id === m.id);
+      if (i >= 0) S.chat.msgs[i] = m; else S.chat.msgs.push(m);
+    });
+    S.chat.msgs.sort((a, b) => (a.pending - b.pending) || (a.criado_em < b.criado_em ? -1 : a.criado_em > b.criado_em ? 1 : 0));
+    if (S.chat.msgs.length > 400) S.chat.msgs = S.chat.msgs.slice(-400);
+  }
+  function mergeVistos(v) {
+    Object.entries(v || {}).forEach(([k, iso]) => { if ((iso || '') > (S.chat.vistos[k] || '')) S.chat.vistos[k] = iso; });
+  }
+  function naoLidas() {
+    const visto = S.chat.vistos[S.me] || '';
+    return S.chat.msgs.filter(m => m.usuario !== S.me && !m.pending && m.criado_em > visto).length;
+  }
+
+  function diaLabel(iso) {
+    const d = new Date(iso), hoje = new Date();
+    const dias = Math.floor((new Date(hoje.toDateString()) - new Date(d.toDateString())) / 864e5);
+    if (dias === 0) return 'Hoje';
+    if (dias === 1) return 'Ontem';
+    return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  }
+
+  function ticks(m) {
+    if (m.pending) return '<span class="tick">🕓</span>';
+    const outros = Object.keys(USERS).filter(id => id !== m.usuario);
+    const viram = outros.filter(o => (S.chat.vistos[o] || '') >= m.criado_em).length;
+    if (viram === outros.length) return '<span class="tick seen">✓✓</span>';
+    return `<span class="tick">${viram ? '✓✓' : '✓'}</span>`;
+  }
+
+  const ondas = id => {
+    let h = 0;
+    for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return Array.from({ length: 22 }, (_, i) => `<i style="height:${20 + ((h >> (i % 24)) % 70)}%"></i>`).join('');
+  };
+  const linkify = s => s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  const soEmoji = s => /^(\p{Extended_Pictographic}|\p{Emoji_Modifier}|️|‍|\s){1,12}$/u.test(s) && !/^\s*$/.test(s);
+
+  function msgBody(m) {
+    const src = id => (m.local ? `style="background-image:url('${m.local}')"` : `data-media="${id}"`);
+    switch (m.tipo) {
+      case 'texto':
+        return `<div class="txt ${soEmoji(m.texto) ? 'emoji' : ''}">${linkify(esc(m.texto)).replace(/\n/g, '<br>')}</div>`;
+      case 'imagem':
+        return `<div class="bimg" ${src(m.midia_id)} ${m.pending ? '' : `data-zoom="${m.midia_id}"`}>🖼️</div>`;
+      case 'video':
+        return `<div class="bvid" ${m.local ? `style="background-image:url('${m.local}')"` : m.ref ? `data-media="${m.ref}"` : ''} ${m.pending ? '' : `data-video="${m.midia_id}"`}>
+          <span class="pl">${m.pending ? '<div class="spin"></div>' : '▶'}</span><span class="vtag">🎥</span></div>`;
+      case 'audio':
+        return `<div class="baud">${m.pending ? '<div class="spin"></div>' : `<button class="play small" onclick="A.play('${m.midia_id}', this)" aria-label="Ouvir">▶</button>`}
+          <div class="wavebar">${ondas(m.id)}</div></div>`;
+      case 'arquivo':
+        return `<button class="bfile" ${m.pending ? '' : `data-file="${m.midia_id}" data-name="${esc(m.ref)}"`}>
+          <span class="fico">📄</span><span class="fname">${esc(m.ref || 'arquivo')}</span><span>${m.pending ? '<div class="spin sm"></div>' : '⬇️'}</span></button>`;
+      case 'pix': {
+        const [para, v] = String(m.ref).split(':');
+        return `<div class="bpix"><div class="pix-ico">💸</div><div class="grow"><div class="pv mono">${brl(v)}</div>
+          <div class="pto">➜ ${avatar(para, 'xs')}<b style="color:${user(para).cor}">${esc(user(para).nome)}</b></div></div></div>
+          ${m.texto ? `<div class="txt">${esc(m.texto)}</div>` : ''}`;
+      }
+      case 'troca':
+        return trocaCard((S.data.trocas || []).find(t => t.id === m.ref));
+      case 'apagada':
+        return '<div class="txt del">🚫</div>';
+    }
+    return '';
+  }
+
+  function msgHtml(m, prev) {
+    let sep = '';
+    if (!prev || new Date(prev.criado_em).toDateString() !== new Date(m.criado_em).toDateString()) {
+      sep = `<div class="day-sep"><span>${diaLabel(m.criado_em)}</span></div>`;
+    }
+    if (m.tipo === 'sistema') return sep + `<div class="sys"><span>${esc(m.texto)}</span></div>`;
+    const mine = m.usuario === S.me;
+    const first = !!sep || !prev || prev.usuario !== m.usuario || prev.tipo === 'sistema'
+      || new Date(m.criado_em) - new Date(prev.criado_em) > 5 * 60e3;
+    const u = user(m.usuario);
+    const card = ['pix', 'troca'].includes(m.tipo);
+    return sep + `<div class="msg ${mine ? 'me' : 'them'} ${first ? 'first' : ''} t-${m.tipo} ${m.pending ? 'pending' : ''}" data-mid="${m.id}" style="--uc:${u.cor}">
+      ${mine ? '' : first ? avatar(m.usuario, 'xs') : '<span class="av-sp"></span>'}
+      <div class="bubble ${card ? 'cardish' : ''}">
+        ${!mine && first ? `<div class="from" style="color:${u.cor}">${esc(u.nome)}</div>` : ''}
+        ${msgBody(m)}
+        <span class="meta">${hora(m.criado_em)}${mine ? ticks(m) : ''}</span>
+      </div></div>`;
+  }
+
+  function chatPage() {
+    const kid = S.me !== ADMIN;
+    return `<div class="chat-page ${kid ? 'kid' : 'adm'}">
+      <div class="chat-head">
+        <div class="stack">${Object.keys(USERS).map(id => avatar(id, 'sm')).join('')}</div>
+        <div class="grow"><div class="ttl">👨‍👦‍👦</div><div class="muted small">${Object.keys(USERS).map(id => esc(user(id).nome)).join(', ')}</div></div>
+      </div>
+      <div class="chat-list"></div>
+      <div class="composer-wrap"><div class="composer"></div></div>
+    </div>`;
+  }
+
+  function composerIdle() {
+    const c = $app.querySelector('.composer');
+    if (!c) return;
+    c.classList.remove('rec-on');
+    c.innerHTML = `
+      <button class="cbtn" data-c="attach" aria-label="Anexar">📎</button>
+      <div class="cfield"><textarea rows="1" placeholder="💬" data-c-input>${esc(S.draft || '')}</textarea>
+        <label class="cbtn cam" aria-label="Câmera">📷<input type="file" accept="image/*" capture="environment" hidden data-c-file></label></div>
+      <button class="cbtn send" data-c="send" aria-label="Enviar">${(S.draft || '').trim() ? '➤' : '🎤'}</button>`;
+    const ta = c.querySelector('textarea');
+    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; };
+    grow();
+    ta.oninput = () => {
+      S.draft = ta.value;
+      grow();
+      c.querySelector('[data-c=send]').textContent = ta.value.trim() ? '➤' : '🎤';
+    };
+    ta.onkeydown = e => {
+      if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); enviarTexto(); }
+    };
+    c.querySelector('[data-c-file]').onchange = e => { const fs = [...e.target.files]; e.target.value = ''; fs.forEach(enviarArquivo); };
+    c.onclick = e => {
+      const a = e.target.closest('[data-c]')?.dataset.c;
+      if (a === 'attach') anexos();
+      if (a === 'send') (S.draft || '').trim() ? enviarTexto() : gravar(c);
+    };
+  }
+
+  function mountChat() {
+    composerIdle();
+    drawChat(true);
+    pollChat(true);
+  }
+
+  // redesenha a lista só quando algo mudou; mantém a posição se a pessoa estiver lendo lá em cima
+  function drawChat(force) {
+    const list = $app.querySelector('.chat-list');
+    if (!list) return;
+    const msgs = S.chat.msgs;
+    const sig = JSON.stringify([msgs.map(m => m.id + m.tipo + (m.pending ? 1 : 0)), S.chat.vistos, (S.data.trocas || []).map(t => t.id + t.status)]);
+    if (!force && sig === S.chat.sig) return;
+    if (!force && !player.paused) return; // não corta o áudio que está tocando
+    S.chat.sig = sig;
+    const doc = document.scrollingElement;
+    const pertoDoFim = force || doc.scrollHeight - (scrollY + innerHeight) < 220;
+    list.innerHTML = msgs.length
+      ? msgs.map((m, i) => msgHtml(m, msgs[i - 1])).join('')
+      : '<div class="empty"><span class="big">💬</span></div>';
+    hydrate(list);
+    if (pertoDoFim) requestAnimationFrame(() => scrollTo(0, doc.scrollHeight));
+  }
+
+  async function pollChat(first) {
+    if (S.chat.fetching || !chatOpen()) return;
+    S.chat.fetching = true;
+    try {
+      const sm = serverMsgs();
+      const desde = first || !sm.length ? '' : sm[sm.length - 1].criado_em;
+      const marcar = first || naoLidas() > 0;
+      const res = await api('chat', { desde, visto: marcar });
+      const novasDeOutros = res.msgs.some(m => m.usuario !== S.me && !S.chat.msgs.find(x => x.id === m.id));
+      mergeMsgs(res.msgs);
+      mergeVistos(res.vistos);
+      if (marcar) S.chat.vistos[S.me] = new Date().toISOString();
+      if (!first && novasDeOutros) navigator.vibrate?.(25);
+      // pix/troca novos mudam saldo e mochila: busca o resto em segundo plano
+      if (res.msgs.some(m => ['pix', 'troca', 'sistema'].includes(m.tipo) && m.usuario !== S.me) && !first) load(true);
+      drawChat();
+      badges();
+    } catch (e) { console.warn(e); }
+    finally { S.chat.fetching = false; }
+  }
+  setInterval(() => { if (document.visibilityState === 'visible' && chatOpen()) pollChat(false); }, CHAT_POLL_MS);
+
+  /** Atualiza só os contadores (nav / abas) sem redesenhar a tela. */
+  function badges() {
+    const n = chatOpen() ? 0 : naoLidas();
+    const el = $app.querySelector('[data-badge=chat]');
+    if (!el) return;
+    el.querySelector('.dot, .n')?.remove();
+    if (n) el.insertAdjacentHTML('beforeend', S.me === ADMIN ? `<span class="n">${n}</span>` : `<span class="dot">${n}</span>`);
+  }
+
+  function addPending(m) {
+    const tmp = { id: 'tmp' + Date.now() + Math.random().toString(36).slice(2, 6), usuario: S.me, criado_em: new Date().toISOString(), pending: true, texto: '', ref: '', ...m };
+    S.chat.msgs.push(tmp);
+    drawChat(true);
+    return tmp;
+  }
+  function resolvePending(tmp, real) {
+    const i = S.chat.msgs.indexOf(tmp);
+    if (i >= 0) S.chat.msgs.splice(i, 1);
+    if (real) mergeMsgs([real]);
+    drawChat(true);
+  }
+
+  async function enviarTexto() {
+    const texto = (S.draft || '').trim();
+    if (!texto) return;
+    S.draft = '';
+    const ta = $app.querySelector('[data-c-input]');
+    if (ta) { ta.value = ''; ta.oninput(); ta.focus(); }
+    const tmp = addPending({ tipo: 'texto', texto });
+    try {
+      resolvePending(tmp, await api('enviarMsg', { tipo: 'texto', texto }));
+    } catch (err) {
+      resolvePending(tmp, null);
+      S.draft = texto;
+      composerIdle();
+      toast('⚠️ ' + err.message, true);
+    }
+  }
+
+  async function enviarMidia(tipo, dataUrl, extra = {}) {
+    const tmp = addPending({ tipo, local: tipo === 'imagem' ? dataUrl : extra.posterUrl, ref: extra.nome || '' });
+    try {
+      const params = { tipo, midia: splitDataUrl(dataUrl), nome: extra.nome || '' };
+      if (extra.posterUrl) params.poster = splitDataUrl(extra.posterUrl);
+      const real = await api('enviarMsg', params);
+      media.set(real.midia_id, dataUrl);
+      if (extra.posterUrl && real.ref) media.set(real.ref, extra.posterUrl);
+      resolvePending(tmp, real);
+    } catch (err) {
+      resolvePending(tmp, null);
+      toast('⚠️ ' + err.message, true);
+    }
+  }
+
+  const fileToDataUrl = f => new Promise((ok, err) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result);
+    r.onerror = err;
+    r.readAsDataURL(f);
+  });
+
+  function videoPoster(file) {
+    return new Promise(ok => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      let feito = false;
+      const done = r => { if (feito) return; feito = true; URL.revokeObjectURL(url); ok(r); };
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+      v.onloadeddata = () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); };
+      v.onseeked = () => {
+        try {
+          const s = Math.min(1, 480 / Math.max(v.videoWidth, v.videoHeight));
+          const c = document.createElement('canvas');
+          c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          done(c.toDataURL('image/jpeg', 0.6));
+        } catch { done(null); }
+      };
+      v.onerror = () => done(null);
+      setTimeout(() => done(null), 5000);
+    });
+  }
+
+  async function enviarArquivo(f) {
+    try {
+      if (f.type.startsWith('image/') && f.type !== 'image/gif') {
+        return enviarMidia('imagem', await compressImage(f, 1280, 0.75));
+      }
+      if (f.type.startsWith('video/')) {
+        if (f.size > MAX_VIDEO) return toast('🎥 máx. 15 MB', true);
+        const posterUrl = await videoPoster(f);
+        return enviarMidia('video', await fileToDataUrl(f), { posterUrl });
+      }
+      if (f.size > MAX_FILE) return toast('📄 máx. 10 MB', true);
+      if (f.type.startsWith('audio/')) return enviarMidia('audio', await fileToDataUrl(f));
+      if (f.type === 'image/gif') return enviarMidia('imagem', await fileToDataUrl(f));
+      const url = await fileToDataUrl(f);
+      return enviarMidia('arquivo', url.startsWith('data:;') ? url.replace('data:;', 'data:application/octet-stream;') : url, { nome: f.name });
+    } catch (err) { toast('⚠️ ' + (err.message || 'arquivo'), true); }
+  }
+
+  function anexos() {
+    const kid = S.me !== ADMIN;
+    const sh = openSheet(`
+      <h2>📎<button class="btn ghost close" data-a="close">✖</button></h2>
+      <div class="attach-grid">
+        <label class="att" style="--c:#a855f7">🖼️<input type="file" accept="image/*,video/*" multiple hidden></label>
+        <label class="att" style="--c:#ef4444">📷<input type="file" accept="image/*" capture="environment" hidden></label>
+        <label class="att" style="--c:#f97316">🎥<input type="file" accept="video/*" capture="environment" hidden></label>
+        <label class="att" style="--c:#3b82f6">📄<input type="file" hidden></label>
+        ${kid ? `<button class="att" style="--c:#22c55e" data-a="pix">💸</button>
+        <button class="att" style="--c:#eab308" data-a="troca">🔄</button>` : ''}
+      </div>`);
+    sh.querySelectorAll('input[type=file]').forEach(inp => {
+      inp.onchange = () => { const fs = [...inp.files]; closeSheet(); fs.forEach(enviarArquivo); };
+    });
+    sh.onclick = e => {
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a === 'close') closeSheet();
+      if (a === 'pix') pixSheet();
+      if (a === 'troca') trocaSheet();
+    };
+  }
+
+  // mensagem de voz: toca 🎤 para gravar, 🗑️ cancela, ➤ envia
+  async function gravar(c) {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { return toast('🎤 Libere o microfone', true); }
+    const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => window.MediaRecorder?.isTypeSupported?.(m)) || '';
+    let rec;
+    try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : {}); }
+    catch { stream.getTracks().forEach(t => t.stop()); return toast('🎤 ⚠️', true); }
+    const chunks = [];
+    let cancelado = false, sec = 0;
+    S.recording = true;
+    rec.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
+    rec.onstop = async () => {
+      clearInterval(timer);
+      stream.getTracks().forEach(t => t.stop());
+      S.recording = false;
+      composerIdle();
+      if (cancelado || !chunks.length) return;
+      const blob = new Blob(chunks, { type: (rec.mimeType || mime || 'audio/webm').split(';')[0] });
+      enviarMidia('audio', `data:${blob.type};base64,${await blobToB64(blob)}`);
+    };
+    rec.start(1000);
+    navigator.vibrate?.(30);
+    c.classList.add('rec-on');
+    c.innerHTML = `<button class="cbtn" data-r="cancel" aria-label="Cancelar">🗑️</button>
+      <div class="cfield recbar"><span class="rdot"></span><span class="mono rt">0:00</span><div class="wave">${'<i></i>'.repeat(9)}</div></div>
+      <button class="cbtn send" data-r="send" aria-label="Enviar">➤</button>`;
+    const timer = setInterval(() => {
+      sec++;
+      const t = c.querySelector('.rt');
+      if (t) t.textContent = fmtSec(sec);
+      if (sec >= MAX_REC_SEC) rec.stop();
+    }, 1000);
+    c.onclick = e => {
+      const r = e.target.closest('[data-r]')?.dataset.r;
+      if (!r || rec.state === 'inactive') return;
+      cancelado = r === 'cancel';
+      rec.stop();
+    };
+  }
+
+  async function abrirVideo(id) {
+    const z = document.createElement('div');
+    z.className = 'zoom';
+    z.innerHTML = '<div class="spin"></div>';
+    z.onclick = e => { if (e.target === z) { z.querySelector('video')?.pause(); z.remove(); } };
+    document.body.appendChild(z);
+    try {
+      await getMedia([id]);
+      const blob = await (await fetch(media.get(id))).blob();
+      const url = URL.createObjectURL(blob);
+      z.innerHTML = `<video src="${url}" controls autoplay playsinline></video><button class="icon-btn gal-x">✖</button>`;
+      z.querySelector('.gal-x').onclick = () => { z.querySelector('video').pause(); URL.revokeObjectURL(url); z.remove(); };
+    } catch (e) { z.remove(); toast('⚠️ ' + e.message, true); }
+  }
+
+  async function baixar(id, nome) {
+    try {
+      toast('⬇️');
+      await getMedia([id]);
+      const blob = await (await fetch(media.get(id))).blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = nome || 'arquivo';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    } catch (e) { toast('⚠️ ' + e.message, true); }
+  }
+
+  // toques dentro do chat: foto, vídeo, arquivo e segurar para apagar
+  document.addEventListener('click', e => {
+    const z = e.target.closest?.('[data-zoom]');
+    if (z) return A.zoomMedia(z.dataset.zoom);
+    const v = e.target.closest?.('[data-video]');
+    if (v) return abrirVideo(v.dataset.video);
+    const f = e.target.closest?.('[data-file]');
+    if (f) return baixar(f.dataset.file, f.dataset.name);
+  });
+  let holdT = null;
+  const apagarMsg = async el => {
+    const id = el.dataset.mid;
+    const m = S.chat.msgs.find(x => x.id === id);
+    if (!m || m.pending || ['pix', 'troca', 'sistema', 'apagada'].includes(m.tipo)) return;
+    if (m.usuario !== S.me && S.me !== ADMIN) return;
+    navigator.vibrate?.(40);
+    if (!confirm('🗑️ ?')) return;
+    try {
+      await api('apagarMsg', { id });
+      Object.assign(m, { tipo: 'apagada', texto: '', midia_id: '' });
+      drawChat(true);
+    } catch (err) { toast('⚠️ ' + err.message, true); }
+  };
+  document.addEventListener('pointerdown', e => {
+    const el = e.target.closest?.('.chat-list .msg');
+    if (!el || e.target.closest('button, a')) return;
+    clearTimeout(holdT);
+    holdT = setTimeout(() => apagarMsg(el), 600);
+  }, { passive: true });
+  ['pointerup', 'pointercancel', 'pointermove'].forEach(ev =>
+    document.addEventListener(ev, e => { if (ev !== 'pointermove' || Math.abs(e.movementY) > 4) clearTimeout(holdT); }, { passive: true }));
+  document.addEventListener('contextmenu', e => { if (e.target.closest?.('.chat-list .msg')) e.preventDefault(); });
+
   // ------------------------------------------------------------ ações globais
   window.A = {
     reload: () => load(),
-    tab: t => { if (S.tab === t) return; S.tab = t; render(true); scrollTo({ top: 0, behavior: 'smooth' }); navigator.vibrate?.(8); },
-    adminTab: t => { S.adminTab = t; render(true); },
+    tab: t => { if (S.tab === t) return; S.tab = t; render(true); if (t !== 'chat') scrollTo({ top: 0, behavior: 'smooth' }); navigator.vibrate?.(8); },
+    adminTab: t => { if (S.adminTab === t) return; S.adminTab = t; render(true); },
     rank: k => { S.rank = k; render(true); },
-    compose, buy, editItem, refazer, aprovar,
+    compose, buy, editItem, refazer, aprovar, trocaStatus,
+    pix: () => pixSheet(),
+    troca: () => trocaSheet(),
     play: (id, btn) => playMedia(id, btn),
     zoomMedia: async id => { await getMedia([id]); media.has(id) && zoom(media.get(id)); },
     gallery: async (ids, start = 0) => {
