@@ -166,8 +166,18 @@ function statsDe_(k, relatos, resgates, movs) {
   meus.forEach(function (x) { dias[dia_(new Date(x.criado_em))] = true; });
   let streak = 0;
   const cur = new Date(now);
-  if (!dias[dia_(cur)]) cur.setDate(cur.getDate() - 1);
+  const hojeFeito = !!dias[hoje];
+  if (!hojeFeito) cur.setDate(cur.getDate() - 1); // ainda dá tempo de manter a ofensiva hoje
   while (dias[dia_(cur)]) { streak++; cur.setDate(cur.getDate() - 1); }
+
+  // recorde: a maior sequência de dias seguidos de todos os tempos
+  let recorde = 0, seq = 0, ant = null;
+  Object.keys(dias).sort().forEach(function (d) {
+    const t = new Date(d + 'T12:00:00Z').getTime();
+    seq = ant !== null && Math.round((t - ant) / 864e5) === 1 ? seq + 1 : 1;
+    if (seq > recorde) recorde = seq;
+    ant = t;
+  });
 
   return {
     saldo: saldo, semana: semana, mes: mes, total: total,
@@ -176,6 +186,8 @@ function statsDe_(k, relatos, resgates, movs) {
     nota10: notas.filter(function (n) { return n === 10; }).length,
     media: notas.length ? Math.round(notas.reduce(function (a, b) { return a + b; }, 0) / notas.length * 10) / 10 : 0,
     streak: streak,
+    recorde: Math.max(recorde, streak),
+    hojeFeito: hojeFeito,
     resgatesEntregues: resgates.filter(function (x) { return x.usuario === k && x.status === 'entregue'; }).length,
   };
 }

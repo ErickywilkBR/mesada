@@ -24,6 +24,36 @@
     { e: '🎁', t: '1º',   ok: s => s.resgatesEntregues >= 1 },
   ];
 
+  // ofensiva: dias seguidos com relato. Elos inspirados no Free Fire (nomes), emblemas e bichinho são próprios.
+  const ELOS = [
+    { min: 0,  n: 'Sem elo',         e: '·',  c: '#5b6270' },
+    { min: 1,  n: 'Bronze',          e: '🛡️', c: '#cd7f32' },
+    { min: 3,  n: 'Prata',           e: '🛡️', c: '#c0c7d1' },
+    { min: 5,  n: 'Ouro',            e: '🛡️', c: '#f5c542' },
+    { min: 7,  n: 'Platina',         e: '🔰', c: '#5ee0d0' },
+    { min: 14, n: 'Diamante',        e: '💎', c: '#5aa9ff' },
+    { min: 21, n: 'Heroico',         e: '⚔️', c: '#b06bff' },
+    { min: 30, n: 'Mestre',          e: '👑', c: '#ff5a5a' },
+    { min: 45, n: 'Mestre de Honra', e: '🏵️', c: '#ff9b2f' },
+    { min: 60, n: 'Grão-Mestre',     e: '🔱', c: '#ffd700' },
+  ];
+  // o bichinho cresce com a ofensiva e dorme quando ela está em risco
+  const PETS = [
+    { min: 0,  e: '🥚', n: 'Ovo' },
+    { min: 3,  e: '🐣', n: 'Filhote' },
+    { min: 7,  e: '🦊', n: 'Raposinha' },
+    { min: 14, e: '🐺', n: 'Lobo' },
+    { min: 30, e: '🐲', n: 'Dragãozinho' },
+    { min: 60, e: '🐉', n: 'Dragão' },
+  ];
+  const nivel = (lista, d) => lista.filter(x => d >= x.min).pop();
+  const elo = d => nivel(ELOS, d || 0);
+  const proxElo = d => ELOS.find(x => x.min > (d || 0));
+  const emblema = (d, cls = '') => {
+    const x = elo(d);
+    return `<span class="emb ${cls}" style="--c:${x.c}" title="${x.n}"><span>${x.e}</span></span>`;
+  };
+
   // ícones (Lucide, ISC) + logo oficial do Pix (Simple Icons, CC0)
   const svg = (d, fill) => `<svg viewBox="0 0 24 24" ${fill ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'} aria-hidden="true">${d}</svg>`;
   const ICON = {
@@ -484,7 +514,7 @@
         <label style="cursor:pointer">${avatar(S.me, 'ring-anim', true)}
           <input type="file" accept="image/*" hidden onchange="A.setFoto(this)"></label>
         <div class="who"><div class="eyebrow">Mesada</div><div class="name"><em>${esc(me.nome)}</em></div>
-          <div class="sub">${st.streak ? `<span>🔥 <b class="mono">${st.streak}</b></span>` : ''}${st.media ? `<span>⭐ <b class="mono">${st.media}</b></span>` : ''}</div></div>
+          <div class="sub">${st.streak ? `<span class="elo-chip" style="--c:${elo(st.streak).c}">${elo(st.streak).e} ${elo(st.streak).n}</span>` : ''}${st.media ? `<span>⭐ <b class="mono">${st.media}</b></span>` : ''}</div></div>
       </div>
       <div class="balance-wrap">
         <div class="balance" data-tilt>
@@ -500,11 +530,29 @@
       ${nav}`;
   }
 
+  function ofensivaCard(st) {
+    const d = st.streak || 0;
+    const x = elo(d), prox = proxElo(d), pet = nivel(PETS, d);
+    const risco = d > 0 && !st.hojeFeito;
+    const pct = prox ? Math.round((d - x.min) / (prox.min - x.min) * 100) : 100;
+    return `<div class="card ofensiva ${risco ? 'risco' : ''} ${st.hojeFeito ? 'feito' : ''}" style="--c:${x.c}" onclick="A.elos()">
+      <div class="pet ${risco ? 'dorme' : ''}">${pet.e}${risco ? '<i>💤</i>' : ''}</div>
+      <div class="of-info">
+        <div class="of-top">${emblema(d, 'sm')}<b>${x.n}</b></div>
+        <div class="of-dias"><span class="fogo">🔥</span><b class="mono">${d}</b> <span class="muted">${d === 1 ? 'dia' : 'dias'}</span></div>
+        ${prox ? `<div class="progress"><i style="width:${pct}%;background:${prox.c}"></i></div>
+          <div class="muted small">${prox.e} ${prox.n} em ${prox.min - d} ${prox.min - d === 1 ? 'dia' : 'dias'}</div>` : '<div class="small">🏆 Elo máximo!</div>'}
+      </div>
+      <div class="of-hoje">${st.hojeFeito ? '✅<small>hoje</small>' : d ? '⚠️<small>relate hoje</small>' : '📸<small>comece</small>'}</div>
+    </div>`;
+  }
+
   function kidHome() {
     // "refazer" primeiro; o resto mantém a ordem (mais novo primeiro)
     const rel = [...S.data.relatos].sort((a, b) => (b.status === 'refazer') - (a.status === 'refazer'));
-    if (!rel.length) return `<div class="empty"><span class="big">📭</span></div>`;
-    return `${sectionTitle('📜', '', rel.length)}
+    const of = ofensivaCard(user(S.me).stats || {});
+    if (!rel.length) return `${of}<div class="empty"><span class="big">📭</span></div>`;
+    return `${of}${sectionTitle('📜', '', rel.length)}
       <div class="list">${rel.map(relatoCard).join('')}</div>`;
   }
 
@@ -579,7 +627,7 @@
         <div class="card rank-row ${kids[0].v === k.v && k.v > 0 ? 'first' : ''}">
           <div class="pos">${kids[0].v === k.v && i > 0 ? pos[0] : pos[i]}</div>
           ${avatar(k.id, 'md')}
-          <div class="nm" style="color:${k.cor}">${esc(k.nome)}</div>
+          <div class="nm" style="color:${k.cor}">${esc(k.nome)} ${emblema(k.stats?.streak, 'xs')}</div>
           <div class="v">${brl(k.v)}</div>
           <div class="bar" style="width:${k.v / max * 100}%;background:${k.cor};box-shadow:0 0 12px ${k.cor}"></div>
         </div>`).join('')}</div>
@@ -754,7 +802,7 @@
         return `<div class="card kid-card"><span class="glow-blob" style="background:${u.cor}"></span>${avatar(id, '')}<div class="grow">
           <div class="nm" style="color:${u.cor}">${esc(u.nome)}</div>
           <div class="v" data-count="${st.saldo || 0}" data-key="saldo-${id}">${brl(st.saldo)}</div>
-          <div class="muted small mono">📅 ${brl(st.semana)} · ⏳ ${pend} · ⭐ ${st.media || '–'} · 🔥 ${st.streak || 0}</div></div></div>`;
+          <div class="muted small mono">📅 ${brl(st.semana)} · ⏳ ${pend} · ⭐ ${st.media || '–'} · 🔥 ${st.streak || 0} ${elo(st.streak).e} ${elo(st.streak).n}</div></div></div>`;
       }).join('')}
         <div class="card kpi"><div class="eyebrow">Pago este mês</div>
           <div class="v" data-count="${KIDS.reduce((s, id) => s + (user(id).stats?.mes || 0), 0)}" data-key="mes-total">–</div>
@@ -1411,6 +1459,19 @@
     rank: k => { S.rank = k; render(true); },
     compose, buy, editItem, refazer, aprovar,
     pix: () => pixSheet(),
+    elos: () => {
+      const st = user(S.me).stats || {};
+      const d = st.streak || 0;
+      const sh = openSheet(`
+        <h2>🔥 Ofensiva<button class="btn ghost close" data-a="close">✖</button></h2>
+        <p class="muted small" style="text-align:center;margin-top:0">Mande um relato todo dia para subir de elo. Se passar um dia sem relato, volta para o começo.</p>
+        <div class="elos">${ELOS.slice(1).map(x => `
+          <div class="elo-row ${d >= x.min ? 'on' : ''} ${elo(d) === x ? 'atual' : ''}" style="--c:${x.c}">
+            ${emblema(x.min)}<b>${x.n}</b><span class="mono muted">${x.min}d</span>
+            <span class="pet-mini">${nivel(PETS, x.min).e}</span></div>`).join('')}</div>
+        <div class="muted small mono" style="text-align:center;margin-top:12px">🏆 Recorde: ${st.recorde || 0} ${st.recorde === 1 ? 'dia' : 'dias'}</div>`);
+      sh.onclick = e => { if (e.target.closest('[data-a=close]')) closeSheet(); };
+    },
     apagarRelato: id => {
       const r = S.data.relatos.find(x => x.id === id);
       if (!r) return;

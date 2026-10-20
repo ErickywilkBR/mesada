@@ -739,3 +739,43 @@ body:not(.admin) #app { padding-bottom: calc(190px + var(--safe-b)); }
 @keyframes donepop { from { transform: scale(.3); opacity: 0; } }
 @keyframes donefade { 80% { opacity: 1; } to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .done, .done-ico, .btn.pix.confirm, .shimmer::after { animation: none; } }
+
+/* ============================================================ ofensiva + elos */
+.emb {
+  --s: 44px; width: var(--s); height: var(--s); flex: none; display: inline-grid; place-items: center; vertical-align: middle;
+  clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--c) 90%, #fff), color-mix(in srgb, var(--c) 55%, #000));
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--c) 60%, transparent));
+}
+.emb span { font-size: calc(var(--s) * .5); line-height: 1; }
+.emb.sm { --s: 28px; }
+.emb.xs { --s: 20px; }
+.elo-chip { color: var(--c); font-weight: 700; font-size: 12px; }
+.ofensiva {
+  position: relative; display: flex; align-items: center; gap: 14px; margin-top: 18px; cursor: pointer;
+  border-color: color-mix(in srgb, var(--c) 45%, transparent);
+  background: radial-gradient(circle at 0% 50%, color-mix(in srgb, var(--c) 22%, transparent), transparent 60%), var(--card, rgba(20, 22, 28, .8));
+}
+.pet { position: relative; font-size: 52px; line-height: 1; animation: bob 3s var(--ease) infinite; filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--c) 70%, transparent)); }
+.pet.dorme { animation: none; filter: grayscale(.6) brightness(.8); }
+.pet i { position: absolute; top: -10px; right: -12px; font-size: 20px; font-style: normal; animation: bob 2s var(--ease) infinite; }
+.of-info { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.of-top { display: flex; align-items: center; gap: 8px; }
+.of-top b { color: var(--c); font-size: 17px; }
+.of-dias { font-size: 15px; }
+.of-dias b { font-size: 24px; }
+.fogo { display: inline-block; animation: chama 1.2s ease-in-out infinite alternate; }
+.ofensiva.risco .fogo { animation: none; filter: grayscale(1); opacity: .6; }
+.ofensiva .progress { height: 6px; }
+.of-hoje { display: grid; justify-items: center; gap: 2px; font-size: 26px; }
+.of-hoje small { font-size: 10px; font-weight: 700; color: var(--muted); text-align: center; max-width: 60px; }
+.ofensiva.risco { border-color: rgba(255, 179, 64, .6); }
+.ofensiva.risco .of-hoje small { color: var(--wait); }
+.elos { display: grid; gap: 8px; }
+.elo-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 14px; opacity: .45; border: 1px solid var(--border-1); }
+.elo-row.on { opacity: 1; }
+.elo-row b { flex: 1; color: var(--c); }
+.elo-row.atual { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: 0 0 20px -8px var(--c); }
+.pet-mini { font-size: 22px; }
+@keyframes chama { from { transform: scale(1) rotate(-4deg); } to { transform: scale(1.15) rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) { .pet, .pet i, .fogo { animation: none; } }
