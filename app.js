@@ -285,6 +285,7 @@
     S.tab = 'home';
     S.chat = { msgs: [], vistos: {} };
     S.draft = '';
+    S.draftChecked = false;
     const cor = USERS[id].cor;
     const n = parseInt(cor.slice(1), 16);
     const r = document.documentElement.style;
@@ -371,6 +372,11 @@
     navIndicator();
     hydrate($app);
     if (chatOpen()) mountChat();
+    if (!S.draftChecked && S.me !== ADMIN) {
+      S.draftChecked = true;
+      const d = readDraft();
+      if (d && d.fotos.length) compose(d.refazerId || undefined);
+    }
   }
 
   // saldo sobe animado do último valor mostrado até o novo
@@ -563,88 +569,102 @@
       }).join('')}`;
   }
 
-  // compor relato (novo ou refazer)
+  // compor relato (novo ou refazer) — tela única: fotos em cima, áudio no meio, enviar embaixo.
+  // As fotos ficam salvas num rascunho: se o celular recarregar a página ao abrir a câmera, nada se perde.
+  const draftKey = () => 'mesada-rascunho-' + S.me;
+  const readDraft = () => { try { return JSON.parse(localStorage.getItem(draftKey())) || null; } catch { return null; } };
+  const saveDraft = d => {
+    try {
+      if (d && d.fotos.length) localStorage.setItem(draftKey(), JSON.stringify(d));
+      else localStorage.removeItem(draftKey());
+    } catch { /* sem espaço: segue sem rascunho */ }
+  };
+
   function compose(refazerId) {
-    const st = { fotos: [], audio: null };
-    let recorder;
+    const rasc = readDraft();
+    const st = {
+      fotos: rasc && (rasc.refazerId || '') === (refazerId || '') ? rasc.fotos : [],
+      audio: null,
+    };
+    let recorder, enviando = false;
+    const persist = () => saveDraft({ fotos: st.fotos, refazerId: refazerId || '' });
     const sh = openSheet(`
-      <h2>${refazerId ? '🔁' : '➕'} <button class="btn ghost close" data-a="close">✖</button></h2>
-      <div class="steps"><i class="on"></i><i></i></div>
-      <div data-step="1">
-        <div class="pick">
-          <label>📷<input type="file" accept="image/*" capture="environment"></label>
-          <label>🖼️<input type="file" accept="image/*" multiple></label>
-        </div>
-      </div>
-      <div data-step="2" hidden>
-        <div class="shots"></div>
-        <div class="add-more"></div>
-        <div data-rec></div>
-        <div class="send-bar"><button class="btn big" data-a="back">⬅️</button>
-          <button class="btn big ok grow send-go" data-a="send">✅ <span class="send-n"></span></button></div>
-      </div>`, s => {
+      <h2>${refazerId ? '🔁' : '📸'} <button class="btn ghost close" data-a="close" aria-label="Fechar">✖</button></h2>
+      <div class="cmp-fotos"></div>
+      <div class="cmp-rec"><div class="cmp-lbl">🎤 <span class="muted small">+</span></div><div data-rec></div></div>
+      <div class="send-bar"><button class="btn big ok grow send-go" data-a="send" disabled>✅ <span class="send-n"></span></button></div>`, s => {
         recorder = mountRecorder(s.querySelector('[data-rec]'), a => { st.audio = a; });
         return () => recorder.stop();
       });
 
-    const step = n => {
-      sh.querySelectorAll('[data-step]').forEach(el => (el.hidden = el.dataset.step != n));
-      sh.querySelectorAll('.steps i').forEach((el, i) => el.classList.toggle('on', i < n));
-    };
-
-    // grade de fotos escolhidas, com ✖ em cada uma e blocos para adicionar mais
-    const drawShots = () => {
-      const grid = sh.querySelector('.shots');
-      grid.classList.toggle('one', st.fotos.length === 1);
-      grid.innerHTML = st.fotos.map((url, i) =>
-        `<div class="shot" style="background-image:url('${url}')"><button data-del="${i}" aria-label="Remover">✖</button></div>`).join('');
-      // adicionar mais é opcional: botões pequenos, não blocos "vazios" na grade
-      sh.querySelector('.add-more').innerHTML = `
-        <label class="btn small-add">➕ 📷<input type="file" accept="image/*" capture="environment" hidden></label>
-        <label class="btn small-add">➕ 🖼️<input type="file" accept="image/*" multiple hidden></label>`;
-      sh.querySelectorAll('.add-more input').forEach(bind);
+    const draw = () => {
+      const box = sh.querySelector('.cmp-fotos');
+      if (!st.fotos.length) {
+        // sem foto ainda: dois botões gigantes
+        box.innerHTML = `<div class="pick">
+          <label aria-label="Câmera">📷<input type="file" accept="image/*" capture="environment"></label>
+          <label aria-label="Galeria">🖼️<input type="file" accept="image/*" multiple></label></div>`;
+      } else {
+        // com fotos: grade + quadradinhos para adicionar mais (opcional)
+        box.innerHTML = `<div class="shots ${st.fotos.length === 1 ? 'one' : ''}">
+          ${st.fotos.map((url, i) => `<div class="shot" style="background-image:url('${url}')"><button data-del="${i}" aria-label="Remover">✖</button></div>`).join('')}
+          </div>
+          <div class="add-more">
+            <label class="btn small-add" aria-label="Mais foto">➕ 📷<input type="file" accept="image/*" capture="environment" hidden></label>
+            <label class="btn small-add" aria-label="Mais da galeria">➕ 🖼️<input type="file" accept="image/*" multiple hidden></label>
+          </div>`;
+      }
+      box.querySelectorAll('input[type=file]').forEach(inp => {
+        inp.onchange = () => { const fs = [...inp.files]; inp.value = ''; if (fs.length) addFiles(fs); };
+      });
+      const go = sh.querySelector('[data-a=send]');
+      go.disabled = !st.fotos.length || enviando;
       sh.querySelector('.send-n').textContent = st.fotos.length > 1 ? `📷×${st.fotos.length}` : '';
-      if (!st.fotos.length) step(1);
     };
 
     const addFiles = async files => {
+      const box = sh.querySelector('.cmp-fotos');
+      box.insertAdjacentHTML('beforeend', '<div class="cmp-loading"><div class="spin"></div></div>');
       for (const f of files) {
-        try { st.fotos.push(await compressImage(f)); } catch { toast('⚠️ Foto inválida', true); }
+        try { st.fotos.push(await compressImage(f)); } catch { toast('⚠️ 📷', true); }
       }
-      if (st.fotos.length) { drawShots(); step(2); }
+      persist();
+      draw();
+      navigator.vibrate?.(15);
     };
 
-    function bind(inp) {
-      inp.onchange = () => { const fs = [...inp.files]; inp.value = ''; if (fs.length) addFiles(fs); };
-    }
-    sh.querySelectorAll('.pick input').forEach(bind);
+    draw();
+    if (st.fotos.length) toast('📸 ↩️');
 
     sh.onclick = async e => {
       const del = e.target.closest('[data-del]');
-      if (del) { st.fotos.splice(Number(del.dataset.del), 1); drawShots(); return; }
-      const a = e.target.closest('[data-a]')?.dataset.a;
-      if (a === 'close') closeSheet();
-      if (a === 'back') step(1);
-      if (a === 'send') {
-        const btn = e.target.closest('[data-a]');
-        btn.disabled = true;
-        btn.innerHTML = '<div class="spin sm"></div>';
-        try {
-          await api('novoRelato', {
-            fotos: st.fotos.map(splitDataUrl),
-            foto: splitDataUrl(st.fotos[0]), // compatível com o Apps Script antigo (1 foto)
-            audio: st.audio ? { mime: st.audio.mime, data: st.audio.data } : null,
-            refazerId: refazerId || '',
-          });
-          closeSheet();
-          confetti(['📸', '🎤', '✨', '🚀']);
-          toast('🚀 ✅');
-          load(true);
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = '✅';
-          toast('⚠️ ' + err.message, true);
-        }
+      if (del) { st.fotos.splice(Number(del.dataset.del), 1); persist(); draw(); return; }
+      const b = e.target.closest('[data-a]');
+      if (!b) return;
+      if (b.dataset.a === 'close') return closeSheet(); // rascunho continua salvo
+      if (b.dataset.a !== 'send' || enviando || !st.fotos.length) return;
+      recorder.stop();
+      enviando = true;
+      b.disabled = true;
+      b.innerHTML = '<div class="spin sm"></div>';
+      try {
+        await api('novoRelato', {
+          fotos: st.fotos.map(splitDataUrl),
+          foto: splitDataUrl(st.fotos[0]), // compatível com o Apps Script antigo (1 foto)
+          audio: st.audio ? { mime: st.audio.mime, data: st.audio.data } : null,
+          refazerId: refazerId || '',
+        });
+        saveDraft(null);
+        closeSheet();
+        confetti(['📸', '🎤', '✨', '🚀']);
+        toast('🚀 ✅');
+        load(true);
+      } catch (err) {
+        enviando = false;
+        b.disabled = false;
+        b.innerHTML = '✅ <span class="send-n"></span>';
+        draw();
+        toast('⚠️ ' + err.message, true);
       }
     };
   }

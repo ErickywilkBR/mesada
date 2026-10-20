@@ -640,6 +640,14 @@ body.admin .msg.me .bubble { background: linear-gradient(160deg, #2a2d36, #1f222
 @keyframes nudge { 50% { transform: translateX(5px); } }
 @keyframes blink { 50% { opacity: .2; } }
 
+/* ============================================================ relato em tela única */
+.cmp-fotos { position: relative; }
+.cmp-loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(2, 6, 14, .55); border-radius: 24px; backdrop-filter: blur(4px); }
+.cmp-rec { margin-top: 16px; border-radius: 22px; padding: 10px 0 4px; background: rgba(255, 255, 255, .025); border: 1px solid var(--border-1); }
+.cmp-lbl { text-align: center; font-size: 18px; opacity: .7; }
+.cmp-rec .rec { padding-top: 8px; }
+.send-go:disabled { animation: none; filter: grayscale(1); opacity: .3; }
+
 /* ============================================================ keyframes */
 @property --ang { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 @keyframes spinang { to { --ang: 360deg; } }
