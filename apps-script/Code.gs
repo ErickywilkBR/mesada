@@ -92,6 +92,7 @@ const API = {
   enviarMsg: enviarMsg_,
   apagarMsg: apagarMsg_,
   pix: pix_,
+  apagarRelato: apagarRelato_,
 };
 
 // ---------------------------------------------------------------- leitura
@@ -205,6 +206,19 @@ function novoRelato_(r) {
   const id = uid_();
   sheet_('Relatos').appendRow([id, k, agora, fotoId, audioId, 'pendente', '', '', '', '', 1]);
   return { id: id };
+}
+
+/** Apaga um relato (qualquer status). Dinheiro já ganho continua no saldo. */
+function apagarRelato_(r) {
+  const me = checkUser_(r.usuario);
+  const row = findRow_('Relatos', r.id);
+  const x = rowObj_('Relatos', row);
+  if (x.usuario !== me && me !== ADMIN) throw new Error('Só dá para apagar os seus');
+  x.foto_id.split(',').forEach(deleteMidia_);
+  deleteMidia_(x.audio_id);
+  deleteMidia_(x.resposta_audio_id);
+  sheet_('Relatos').deleteRow(row);
+  return { ok: true };
 }
 
 function setFoto_(r) {
@@ -377,8 +391,15 @@ function pix_(r) {
   const para = outro_(de);
   const valor = Math.round(Number(r.valor));
   if (!(valor >= 1)) throw new Error('Valor inválido');
+  // chave única por envio: toque duplo ou reenvio após queda de rede devolve o mesmo Pix
+  // em vez de cobrar duas vezes (o lock do doPost garante que a checagem e a gravação não se cruzam)
+  const chave = String(r.chave || '');
+  if (chave && !/^[a-z0-9]{8,32}$/.test(chave)) throw new Error('Chave inválida');
+  if (chave && rows_('Movimentos').some(function (m) { return m.tipo === 'pix_enviado' && m.ref === chave; })) {
+    return { id: chave, repetido: true };
+  }
   if (saldo_(de) < valor) throw new Error('Saldo insuficiente');
-  const id = uid_();
+  const id = chave || uid_();
   addMov_(de, 'pix_enviado', -valor, id);
   addMov_(para, 'pix_recebido', valor, id);
   addMsg_(de, 'pix', String(r.texto || '').slice(0, 200), '', '', para + ':' + valor);

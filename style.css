@@ -709,3 +709,33 @@ body.admin .shop { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .aurora, .grain { display: none; }
 }
+
+/* ============================================================ leva 1: clareza */
+body:not(.admin) #app { padding-bottom: calc(190px + var(--safe-b)); }
+.cta-fab {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 19; margin: 0;
+  bottom: calc(96px + var(--safe-b)); width: min(528px, calc(100% - 32px)); padding: 16px; font-size: 22px; gap: 12px;
+}
+.cta-fab:active { transform: translateX(-50%) scale(.96); }
+.cta-fab .ico { font-size: 28px; }
+.trash {
+  width: 44px; height: 44px; flex: none; border-radius: 14px; display: grid; place-items: center; font-size: 18px;
+  background: rgba(255, 255, 255, .04); border: 1px solid var(--border-1); opacity: .75;
+}
+.trash:active { transform: scale(.9); }
+.btn.big-redo { font-size: 18px; padding: 12px 18px; }
+.btn.danger { background: rgba(255, 77, 77, .14); border-color: rgba(255, 77, 77, .5); color: #ff8a8a; }
+.btn.pix.confirm { background: #32bcad; color: #04211e; font-weight: 800; animation: pulse 1.2s var(--ease) infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(50, 188, 173, .25); } }
+.done {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-content: center; justify-items: center; gap: 14px;
+  pointer-events: none; animation: donefade 1.4s var(--ease) both;
+}
+.done-ico {
+  width: 120px; height: 120px; border-radius: 50%; display: grid; place-items: center; font: 800 64px/1 var(--font-ui);
+  color: #04130b; background: var(--ok); box-shadow: 0 0 60px -6px var(--ok); animation: donepop .5s var(--spring) both;
+}
+.done b { font-size: 22px; padding: 8px 16px; border-radius: 14px; background: rgba(2, 6, 14, .8); backdrop-filter: blur(10px); }
+@keyframes donepop { from { transform: scale(.3); opacity: 0; } }
+@keyframes donefade { 80% { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .done, .done-ico, .btn.pix.confirm, .shimmer::after { animation: none; } }

@@ -76,11 +76,14 @@
 
   async function api(action, params = {}) {
     if (!API || API.startsWith('COLE')) throw new Error('Configure a URL da API no config.js');
-    const r = await fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, usuario: S.me, ...params }),
-    });
+    let r;
+    try {
+      r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, usuario: S.me, ...params }),
+      });
+    } catch { throw new Error('Sem internet. Tente de novo'); }
     const j = await r.json();
     if (!j.ok) throw new Error(j.error);
     return j.data;
@@ -94,6 +97,18 @@
     clearTimeout(toastT);
     toastT = setTimeout(() => (t.className = err ? 'err' : ''), 2600);
   }
+
+  // sucesso: sinal grande no meio da tela, entendido sem ler
+  function done(label) {
+    const d = document.createElement('div');
+    d.className = 'done';
+    d.innerHTML = `<div class="done-ico">✓</div>${label ? `<b>${esc(label)}</b>` : ''}`;
+    document.body.appendChild(d);
+    navigator.vibrate?.([30, 40, 30]);
+    setTimeout(() => d.remove(), 1400);
+  }
+  const novaChave = () => (crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36))
+    .replace(/-/g, '').slice(0, 24);
 
   function confetti(emojis = ['💰', '⭐', '🎉', '✨', '🪙']) {
     const c = document.createElement('div');
@@ -435,9 +450,9 @@
   const stars = n => n ? `<span class="stars">${'★'.repeat(n)}<span style="opacity:.25">${'★'.repeat(10 - n)}</span></span>` : '';
 
   function badge(r) {
-    if (r.status === 'aprovado') return `<span class="badge aprovado">✅ <span class="mono">${brl(r.valor)}</span></span>`;
-    if (r.status === 'refazer') return `<span class="badge refazer"><span class="live"></span>🔁</span>`;
-    return `<span class="badge pendente"><span class="live"></span>⏳</span>`;
+    if (r.status === 'aprovado') return `<span class="badge aprovado">✓ Ganhou <span class="mono">${brl(r.valor)}</span></span>`;
+    if (r.status === 'refazer') return `<span class="badge refazer"><span class="live"></span>Refazer</span>`;
+    return `<span class="badge pendente"><span class="live"></span>Esperando</span>`;
   }
 
   // ------------------------------------------------------------ KID
@@ -470,7 +485,6 @@
           <input type="file" accept="image/*" hidden onchange="A.setFoto(this)"></label>
         <div class="who"><div class="eyebrow">Mesada</div><div class="name"><em>${esc(me.nome)}</em></div>
           <div class="sub">${st.streak ? `<span>🔥 <b class="mono">${st.streak}</b></span>` : ''}${st.media ? `<span>⭐ <b class="mono">${st.media}</b></span>` : ''}</div></div>
-        <button class="icon-btn" onclick="A.reload()" aria-label="Atualizar">🔄</button>
       </div>
       <div class="balance-wrap">
         <div class="balance" data-tilt>
@@ -479,15 +493,10 @@
           <div class="lbl">💰 <span class="eyebrow">saldo</span>
             <button class="pix-btn" onclick="event.stopPropagation();A.pix()" aria-label="Pix">${ICON.pix}<span>Pix</span></button></div>
           <div class="val" data-count="${st.saldo || 0}" data-key="saldo">${brl(st.saldo)}</div>
-          <div class="chips">
-            <span class="chip">📅 <span class="mono">${brl(st.semana)}</span></span>
-            <span class="chip">🗓️ <span class="mono">${brl(st.mes)}</span></span>
-            <span class="chip">✅ <span class="mono">${st.aprovados || 0}</span></span>
-          </div>
         </div>
       </div>
-      ${S.tab === 'home' ? `<button class="cta shimmer" onclick="A.compose()"><span class="ico">📸</span><span class="plus">+</span><span class="ico">🎤</span></button>` : ''}
       <div class="view">${body}</div>
+      ${S.tab === 'home' ? `<button class="cta cta-fab shimmer" onclick="A.compose()"><span class="ico">📸</span>Relatar</button>` : ''}
       ${nav}`;
   }
 
@@ -516,10 +525,11 @@
           <div class="date">${quando(r.criado_em)}</div>
         </div>
         ${r.audio_id ? `<button class="play small" onclick="A.play('${r.audio_id}', this)" aria-label="Ouvir">▶</button>` : ''}
+        <button class="trash" onclick="A.apagarRelato('${r.id}')" aria-label="Apagar">🗑️</button>
       </div>
       ${r.status === 'refazer' ? `<div class="redo-box">
         ${r.resposta_audio_id ? `<button class="play small" style="background:var(--redo)" onclick="A.play('${r.resposta_audio_id}', this)">▶</button><span>🗣️</span>` : '<span style="font-size:22px">🔁</span>'}
-        <button class="btn warn" onclick="A.compose('${r.id}')">📸 🎤</button>
+        <button class="btn warn big-redo" onclick="A.compose('${r.id}')">📸 Refazer</button>
       </div>` : ''}
     </div>`;
   }
@@ -647,7 +657,7 @@
     };
 
     draw();
-    if (st.fotos.length) toast('📸 ↩️');
+    if (st.fotos.length) toast('📸 Suas fotos voltaram');
 
     sh.onclick = async e => {
       const del = e.target.closest('[data-del]');
@@ -670,7 +680,7 @@
         saveDraft(null);
         closeSheet();
         confetti(['📸', '🎤', '✨', '🚀']);
-        toast('🚀 ✅');
+        done('Enviado!');
         load(true);
       } catch (err) {
         enviando = false;
@@ -703,7 +713,7 @@
         await api('resgatar', { itemId });
         closeSheet();
         confetti(['🎁', '🛍️', '🎉', '🎒']);
-        toast('🎒 ✅');
+        done('Na mochila!');
         S.tab = 'mochila';
         load(true);
       } catch (err) { b.disabled = false; b.textContent = '✅ 🛒'; toast('⚠️ ' + err.message, true); }
@@ -945,24 +955,43 @@
         <button data-q="${(saldo / 100).toFixed(2).replace('.', ',')}">💰 tudo</button></div>
       <div class="muted small mono" style="text-align:center;margin:10px 0">💰 ${brl(saldo)}</div>
       <button class="btn pix big mt" style="width:100%" data-a="send">${ICON.pix} Enviar</button>`);
+    // segurança contra valor duplicado: 1º toque pede confirmação, 2º envia; enquanto envia, nada mais passa.
+    // A chave vale para esta tentativa: se a rede cair e tentar de novo, o servidor não cobra duas vezes.
+    let confirmando = 0, enviando = false, chave = novaChave();
+    const btn = sh.querySelector('[data-a=send]');
+    const resetBtn = () => { confirmando = 0; btn.classList.remove('confirm'); btn.innerHTML = `${ICON.pix} Enviar`; };
+    sh.querySelector('[name=v]').oninput = () => { if (!enviando) resetBtn(); };
     sh.onclick = async e => {
       const q = e.target.closest('[data-q]');
-      if (q) { sh.querySelector('[name=v]').value = q.dataset.q; return; }
+      if (q && !enviando) { sh.querySelector('[name=v]').value = q.dataset.q; resetBtn(); return; }
       const b = e.target.closest('[data-a]');
-      if (!b) return;
+      if (!b || enviando) return;
       if (b.dataset.a === 'close') return closeSheet();
       const valor = parseMoney(sh.querySelector('[name=v]').value);
       if (!(valor >= 1)) return toast('Digite o valor', true);
       if (valor > saldo) return toast('🔒 ' + brl(saldo), true);
+      if (confirmando !== valor) {
+        confirmando = valor;
+        b.classList.add('confirm');
+        b.innerHTML = `✓ Confirmar ${brl(valor)} para ${esc(user(para).nome)}`;
+        navigator.vibrate?.(20);
+        return;
+      }
+      enviando = true;
       b.disabled = true;
       b.innerHTML = '<div class="spin sm"></div>';
       try {
-        await api('pix', { valor });
+        await api('pix', { valor, chave });
         closeSheet();
         confetti(['💰', '🪙', '✨']);
-        toast(`Pix ${brl(valor)} ➜ ${user(para).nome}`);
+        done(`${brl(valor)} → ${user(para).nome}`);
         load(true);
-      } catch (err) { b.disabled = false; b.innerHTML = `${ICON.pix} Enviar`; toast('⚠️ ' + err.message, true); }
+      } catch (err) {
+        enviando = false;
+        b.disabled = false;
+        resetBtn();
+        toast('⚠️ ' + err.message, true);
+      }
     };
   }
 
@@ -1382,6 +1411,32 @@
     rank: k => { S.rank = k; render(true); },
     compose, buy, editItem, refazer, aprovar,
     pix: () => pixSheet(),
+    apagarRelato: id => {
+      const r = S.data.relatos.find(x => x.id === id);
+      if (!r) return;
+      const sh = openSheet(`
+        <h2>🗑️ Apagar?<button class="btn ghost close" data-a="close">✖</button></h2>
+        ${r.status === 'aprovado' ? `<p class="muted" style="text-align:center">💰 ${brl(r.valor)} continua com você</p>` : ''}
+        <div class="duo mt">
+          <button class="btn big" data-a="close">↩️ Voltar</button>
+          <button class="btn big danger" data-a="del">🗑️ Apagar</button>
+        </div>`);
+      sh.onclick = async e => {
+        const b = e.target.closest('[data-a]');
+        if (!b || b.disabled) return;
+        if (b.dataset.a === 'close') return closeSheet();
+        b.disabled = true;
+        b.innerHTML = '<div class="spin sm"></div>';
+        try {
+          await api('apagarRelato', { id });
+          S.data.relatos = S.data.relatos.filter(x => x.id !== id);
+          closeSheet();
+          done('Apagado');
+          render();
+          load(true);
+        } catch (err) { b.disabled = false; b.innerHTML = '🗑️ Apagar'; toast('⚠️ ' + err.message, true); }
+      };
+    },
     play: (id, btn) => playMedia(id, btn),
     zoomMedia: async id => { await getMedia([id]); media.has(id) && zoom(media.get(id)); },
     gallery: async (ids, start = 0) => {
