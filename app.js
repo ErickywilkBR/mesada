@@ -616,6 +616,7 @@
         try {
           await api('novoRelato', {
             fotos: st.fotos.map(splitDataUrl),
+            foto: splitDataUrl(st.fotos[0]), // compatível com o Apps Script antigo (1 foto)
             audio: st.audio ? { mime: st.audio.mime, data: st.audio.data } : null,
             refazerId: refazerId || '',
           });
