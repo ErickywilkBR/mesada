@@ -91,8 +91,11 @@ function doPost(e) {
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
+// Abrir a URL /exec no navegador mostra a versão que está no ar (confere se a implantação nova pegou)
+const VERSAO = 'tv-1';
+
 function doGet() {
-  return ContentService.createTextOutput(JSON.stringify({ ok: true, data: 'mesada api' }))
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, data: 'mesada api', versao: VERSAO }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
