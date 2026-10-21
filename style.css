@@ -810,6 +810,10 @@ button.elo-chip { cursor: pointer; font-family: var(--font-ui); }
 .criar-op:active { transform: scale(.97); }
 .criar-op:last-child:nth-child(odd) { grid-column: span 2; }
 
+/* no painel do Ericky o chat ocupa a tela toda: o voltar fica no cabeçalho dele */
+.chat-sair { flex: none; }
+.chat-sair svg { transform: rotate(180deg); }
+
 /* ============================================================ controle da TV */
 .tv-btn { font-size: 20px; }
 .tv-voltar { min-height: 36px; padding: 6px 12px 6px 6px; margin-bottom: 14px; font-size: 14px; }

@@ -431,9 +431,36 @@
   }
 
   // ------------------------------------------------------------ carga
+  // Apps Script ainda sem as ações da TV (Code.gs não reimplantado): usa os dados do painel do Ericky.
+  // A linha do tempo sai dos relatos aprovados e das compras (Pix e cofrinho só aparecem com o backend novo).
+  let backendAntigo = false;
+  async function painelAntigo() {
+    const d = await api('bootstrap', { usuario: 'ericky' });
+    const movs = [];
+    d.relatos.forEach(r => {
+      if (r.status === 'aprovado') movs.push({ id: 'a' + r.id, usuario: r.usuario, tipo: 'relato', valor: r.valor || 0, ref: r.id, data: r.avaliado_em || r.criado_em });
+    });
+    d.resgates.forEach(x => {
+      if (x.status !== 'cancelado') movs.push({ id: 'c' + x.id, usuario: x.usuario, tipo: 'resgate', valor: -x.preco, ref: x.id, data: x.criado_em });
+    });
+    movs.sort((a, b) => (a.data < b.data ? 1 : -1));
+    return {
+      usuarios: d.usuarios, relatos: d.relatos.slice(0, 40), resgates: d.resgates.slice(0, 30), loja: d.loja,
+      missoes: d.missoes || [], tarefas: d.tarefas || [], multas: d.multas || [], leiloes: d.leiloes || [],
+      movs: movs.slice(0, 40), agora: d.agora || new Date().toISOString(), taxas: d.taxas,
+    };
+  }
+
   async function carregar() {
     try {
-      const d = await api('tvPainel');
+      let d;
+      if (!backendAntigo) {
+        try { d = await api('tvPainel'); } catch (e) {
+          if (!/inválida/i.test(e.message)) throw e;
+          backendAntigo = true;
+        }
+      }
+      if (backendAntigo) d = await painelAntigo();
       relogioSrv = new Date(d.agora).getTime() - Date.now();
       if (D) antes = KIDS.reduce((o, k) => { o[k] = st(k); return o; }, {});
       D = d;
@@ -460,7 +487,8 @@
     const data = n.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
     $('[data-f=data]').textContent = data;
     const s = Math.round((Date.now() - ultimaCarga) / 1000);
-    $('[data-f=vivo]').textContent = stage.classList.contains('erro') ? 'sem conexão · tentando' : quente ? 'controle conectado' : 'ao vivo · ' + (s < 5 ? 'agora' : 'há ' + s + ' s');
+    $('[data-f=vivo]').textContent = stage.classList.contains('erro') ? 'sem conexão · tentando'
+      : backendAntigo ? 'reimplante o Apps Script para o controle funcionar' : quente ? 'controle conectado' : 'ao vivo · ' + (s < 5 ? 'agora' : 'há ' + s + ' s');
     $('.vivo').classList.toggle('quente', quente);
     document.body.classList.toggle('noite', noite());
     const v = $('video.bg');
@@ -474,8 +502,8 @@
       quente = r.quente;
       if (!ultimoEv) ultimoEv = r.agora; // primeira vez: não repete o que foi mandado antes de a TV abrir
       else r.ev.forEach(e => { if (e.ts > ultimoEv) { ultimoEv = e.ts; executar(e); } });
-    } catch (e) { /* sem rede: tenta na próxima */ }
-    setTimeout(poll, quente ? POLL_RAPIDO : noite() ? POLL_CALMO * 3 : POLL_CALMO);
+    } catch (e) { /* sem rede ou backend antigo: tenta na próxima */ }
+    setTimeout(poll, backendAntigo ? 60000 : quente ? POLL_RAPIDO : noite() ? POLL_CALMO * 3 : POLL_CALMO);
   }
 
   function executar(e) {

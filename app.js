@@ -2439,6 +2439,7 @@
     const kid = S.me !== ADMIN;
     return `<div class="chat-page ${kid ? 'kid' : 'adm'}">
       <div class="chat-head">
+        ${kid ? '' : `<button class="icon-btn chat-sair" onclick="A.adminTab('fila')" aria-label="Voltar ao painel" title="Voltar ao painel">${ICON.chevron}</button>`}
         <div class="stack">${Object.keys(USERS).map(id => avatar(id, 'sm')).join('')}</div>
         <div class="grow"><div class="ttl">Família</div><div class="muted small">${Object.keys(USERS).map(id => esc(user(id).nome)).join(', ')}</div></div>
       </div>
