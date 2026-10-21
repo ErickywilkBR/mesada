@@ -1,4 +1,4 @@
-/* Mesada — painel da TV (tv.html, aberto por #/tv).
+/* Painel da TV (tv.html, aberto por #/tv).
  * Só leitura: mostra os dois irmãos e obedece aos comandos do celular do Ericky (tvPoll).
  * Escrito sem recursos novos de JS (sem ?. e ??) porque o navegador de Smart TV costuma ser antigo.
  * Tudo é desenhado num palco fixo de 1920×1080 que escala para a tela da TV. */
@@ -14,6 +14,7 @@
   const POLL_RAPIDO = 1500;         // comandos, com o controle aberto
   const POLL_CALMO = 12000;         // comandos, sem ninguém mexendo
   const PEGADINHA_MAX = 30000;      // a pegadinha se revela sozinha depois disso
+  const TITULO = 'Cesar & Arthur';
   const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 
   // espelham ELOS / PETS do app.js
@@ -91,16 +92,20 @@
       } catch (e) { /* sem a foto: fica o emoji */ }
     }
   }
-  async function hidratar(root) {
-    const els = $$('[data-media]', root);
-    await midia(els.map(el => el.dataset.media));
-    els.forEach(el => {
+  // foto já baixada aparece na hora (a timeline é redesenhada a cada minuto e não pode piscar)
+  function aplicarMidia(root) {
+    $$('[data-media]', root).forEach(el => {
       const url = media[el.dataset.media];
       if (!url) return;
       el.style.backgroundImage = 'url("' + url + '")';
       el.classList.add('tem-img');
       el.removeAttribute('data-media');
     });
+  }
+  async function hidratar(root) {
+    aplicarMidia(root);
+    await midia($$('[data-media]', root).map(el => el.dataset.media));
+    aplicarMidia(root);
   }
 
   // número que conta até o valor novo
@@ -128,7 +133,7 @@
   function montar() {
     stage.innerHTML = `
       <header class="topo">
-        <div class="marca"><h1>Mesada</h1><span>painel da família</span></div>
+        <div class="marca"><h1>${TITULO}</h1><span>painel da família</span></div>
         <div class="relogio"><b data-f="hora">--:--</b><span data-f="data"></span></div>
         <div class="vivo"><i></i><span data-f="vivo">conectando…</span></div>
       </header>
@@ -239,6 +244,8 @@
   }, 100);
 
   // ------------------------------------------------------------ timeline
+  const primeiraFoto = r => String(r.foto_id || '').split(',')[0];
+
   function itensTimeline() {
     const rel = id => D.relatos.find(r => r.id === id);
     const mis = id => D.missoes.find(m => m.id === id);
@@ -266,10 +273,15 @@
         estorno: ['↩️', 'Compra devolvida'],
         pix_enviado: ['💠', 'Pix para ' + o],
       }[m.tipo] || ['•', m.tipo];
-      out.push({ id: m.id, k: m.usuario, ico: map[0], txt: map[1], v: m.valor, data: m.data, neutro: /^cofre_/.test(m.tipo) });
+      // foto do que aconteceu: o relato, o item comprado, a multa ou o leilão
+      const foto = r ? primeiraFoto(r)
+        : x ? x.imagem_id || (D.loja.find(it => it.id === x.item_id) || {}).imagem_id
+        : m.tipo === 'multa' ? (D.multas.find(y => y.id === m.ref) || {}).foto_id
+        : /^lance/.test(m.tipo) ? (lei(m.ref) || {}).foto_id : '';
+      out.push({ id: m.id, k: m.usuario, ico: map[0], txt: map[1], v: m.valor, data: m.data, neutro: /^cofre_/.test(m.tipo), foto: foto || '' });
     });
     D.relatos.filter(r => r.status === 'pendente').forEach(r =>
-      out.push({ id: 'r' + r.id, k: r.usuario, ico: '📸', txt: 'Mandou um relato · esperando', data: r.criado_em, espera: true }));
+      out.push({ id: 'r' + r.id, k: r.usuario, ico: '📸', txt: 'Mandou um relato · esperando', data: r.criado_em, espera: true, foto: primeiraFoto(r) }));
     return out.sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 6);
   }
 
@@ -280,7 +292,7 @@
       const novo = !primeira && !vistos[it.id];
       const val = it.v == null ? '' : `<b class="tl-v ${it.neutro ? '' : it.v >= 0 ? 'pos' : 'neg'} mono">${it.neutro ? '' : it.v >= 0 ? '+' : '−'} ${brl(Math.abs(it.v))}</b>`;
       return `<li class="${novo ? 'novo' : ''} ${it.espera ? 'espera' : ''}" style="--i:${i};--k:${user(it.k).cor}">
-        <span class="tl-ico">${esc(it.ico)}</span>
+        <span class="tl-ico ${it.foto ? 'foto' : ''}" ${it.foto ? `data-media="${it.foto}"` : ''}><i>${esc(it.ico)}</i></span>
         <div class="tl-txt"><b>${esc(NOMES[it.k] || it.k)}</b> ${esc(it.txt)}<small>${haQuanto(it.data)}</small></div>${val}</li>`;
     }).join('') || '<li class="vazio">Nada por aqui ainda</li>';
     lista.forEach(it => { vistos[it.id] = true; });
@@ -471,7 +483,7 @@
       ultimaCarga = Date.now();
     } catch (e) {
       stage.classList.add('erro');
-      if (!D) stage.innerHTML = `<div class="falha"><h1>Mesada</h1><p>Não consegui carregar: ${esc(e.message)}</p><p class="muted">Tentando de novo…</p></div>`;
+      if (!D) stage.innerHTML = `<div class="falha"><h1>${TITULO}</h1><p>Não consegui carregar: ${esc(e.message)}</p><p class="muted">Tentando de novo…</p></div>`;
     }
     setTimeout(carregar, noite() ? PAINEL_MS * 5 : PAINEL_MS);
   }
@@ -749,6 +761,17 @@
   }
   addEventListener('click', ligarSom);
   addEventListener('keydown', ligarSom);
+  // Navegador só toca som depois de um toque/tecla (regra contra site que grita sozinho).
+  // Algumas TVs liberam direto: testa e, se o som já está livre, nem mostra o aviso.
+  (function () {
+    const c = ctx();
+    const livre = () => { somLigado = true; $('#som-aviso').classList.add('sai'); };
+    if (c && c.state === 'running') return livre();
+    player.src = SILENT;
+    const p = player.play();
+    if (p && p.then) p.then(() => { if (c) c.resume(); livre(); }).catch(() => {});
+    if (c) c.resume().then(() => { if (c.state === 'running') livre(); }).catch(() => {});
+  })();
 
   function tom(f, t, dur, tipo, vol, fFim) {
     const c = ctx(), o = c.createOscillator(), g = c.createGain(), t0 = c.currentTime + t;
@@ -827,7 +850,7 @@
   manterAcesa();
 
   if (!API || API.indexOf('COLE') === 0) {
-    stage.innerHTML = '<div class="falha"><h1>Mesada</h1><p>Configure a URL da API no config.js</p></div>';
+    stage.innerHTML = '<div class="falha"><h1>' + TITULO + '</h1><p>Configure a URL da API no config.js</p></div>';
     escala();
     return;
   }

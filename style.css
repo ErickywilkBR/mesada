@@ -678,12 +678,6 @@ body.admin .msg.me .bubble { background: var(--surface-3); border-color: var(--b
 .g-gen { font-size: 22px; font-weight: 800; color: var(--ok-text); letter-spacing: -.03em; margin-top: 4px; }
 .meta-card { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 10px; }
 .meta-card .pic { width: 56px; height: 56px; flex: none; border-radius: var(--r); display: grid; place-items: center; font-size: 30px; background: var(--surface-3) center/cover; }
-.meta-pick { display: grid; grid-auto-flow: column; grid-auto-columns: 104px; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-.meta-pick button { display: grid; justify-items: center; gap: 3px; padding: 10px 6px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border); }
-.meta-pick button span { font-size: 26px; }
-.meta-pick button small { font-size: 11.5px; color: var(--muted); max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta-pick button b { font-size: 12px; }
-.meta-pick button.on { border-color: rgb(var(--accent-rgb)); background: rgba(var(--accent-rgb), .1); }
 
 /* ============================================================ tarefas fixas */
 .tarefas { padding: 4px 0; }

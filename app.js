@@ -102,10 +102,6 @@
     const n = Number(String(v).replace(/[^\d,.]/g, '').replace(',', '.'));
     return Number.isFinite(n) ? Math.round(n * 100) : NaN;
   };
-  const hexA = (hex, a) => {
-    const n = parseInt(hex.slice(1), 16);
-    return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
-  };
   const splitDataUrl = url => {
     const [head, data] = url.split(',');
     return { mime: head.slice(5).split(';')[0], data };
@@ -888,6 +884,27 @@
       ${sectionTitle('📜', 'Relatos avaliados')}${adminHist()}
       ${(S.data.multas || []).length ? `<div class="card" style="margin-top:14px">${multasRecentes()}</div>` : ''}
       ${fin.length ? `${sectionTitle('🎁', 'Entregas recentes', fin.length)}<div class="list">${fin.map(x => resgateRow(x, true)).join('')}</div>` : ''}`;
+  }
+
+  // relatos já avaliados (Resumo), filtráveis por filho; os 20 mais novos
+  function adminHist() {
+    const k = S.histKid || '';
+    const rel = S.data.relatos.filter(r => r.status !== 'pendente' && (!k || r.usuario === k));
+    const filtro = `<div class="seg inline">${[['', 'Todos'], ...KIDS.map(id => [id, user(id).nome])].map(([id, n]) =>
+      `<button class="${k === id ? 'on' : ''}" onclick="A.histKid('${id}')">${esc(n)}</button>`).join('')}</div>`;
+    if (!rel.length) return `${filtro}<div class="empty">📭<p>Nenhum relato avaliado ainda.</p></div>`;
+    return `${filtro}<div class="list">${rel.slice(0, 20).map(r => `
+      <div class="card relato">
+        ${thumb(r)}
+        <div class="info">
+          <div class="row">${avatar(r.usuario, 'sm')}<b style="color:${user(r.usuario).cor}">${esc(user(r.usuario).nome)}</b>${badge(r)}</div>
+          ${r.missao_id ? `<span class="m-chip">🎯 ${esc(missao(r.missao_id)?.titulo || 'Missão')}</span>` : ''}
+          ${r.tarefa_id ? `<span class="m-chip">📋 ${esc(tarefa(r.tarefa_id)?.titulo || 'Tarefa')}</span>` : ''}
+          ${r.status === 'aprovado' ? stars(r.nota) : ''}
+          <div class="date">${quando(r.criado_em)}</div>
+        </div>
+        ${r.audio_id ? `<button class="play small" onclick="A.play('${r.audio_id}', this)" aria-label="Ouvir">▶</button>` : ''}
+      </div>`).join('')}</div>`;
   }
 
   // ＋ Criar: um lugar só para tudo que o Ericky cria

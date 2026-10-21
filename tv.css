@@ -1,4 +1,4 @@
-/* Mesada — painel da TV. Identidade crimson/noir do Kitsune (tokens de packages/ui/src/tokens.css).
+/* Painel da TV. Identidade crimson/noir do Kitsune (tokens de packages/ui/src/tokens.css).
    Palco fixo de 1920×1080 escalado para a tela: medidas em px valem para qualquer TV. */
 :root {
   --bg-base: #02060e;
@@ -162,11 +162,15 @@ body.leve .card::after, body.leve .aurora { display: none; }
 .moedas i { position: absolute; top: -40px; font-style: normal; font-size: 42px; animation: caiMoeda 1.6s cubic-bezier(.5, 0, .9, .5) both; }
 
 /* timeline */
-.tl ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.tl li { --k: #fff; display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-radius: 18px; background: rgba(2, 6, 14, .4); border: 1px solid transparent; border-left: 4px solid var(--k); animation: entraLado .6s var(--ease) both; animation-delay: calc(var(--i) * 60ms); }
+.tl ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tl li { --k: #fff; display: flex; align-items: center; gap: 16px; padding: 6px 16px 6px 7px; border-radius: 18px; background: rgba(2, 6, 14, .4); border: 1px solid transparent; border-left: 4px solid var(--k); animation: entraLado .6s var(--ease) both; animation-delay: calc(var(--i) * 60ms); }
 .tl li.novo { animation: novo 2.4s var(--ease) both; border-color: var(--red-border); }
 .tl li.espera { opacity: .78; }
-.tl-ico { width: 44px; height: 44px; flex: none; border-radius: 14px; display: grid; place-items: center; font-size: 26px; background: rgba(240, 242, 247, .05); }
+.tl-ico { position: relative; width: 52px; height: 52px; flex: none; border-radius: 14px; display: grid; place-items: center; font-size: 26px; background: rgba(240, 242, 247, .05) center / cover; }
+.tl-ico i { font-style: normal; }
+/* com foto: o emoji vira um selinho no canto */
+.tl-ico.tem-img { box-shadow: inset 0 0 0 1px rgba(240, 242, 247, .12); }
+.tl-ico.tem-img i { position: absolute; right: -6px; bottom: -6px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; background: var(--bg-surface); box-shadow: 0 0 0 2px var(--k); }
 .tl-txt { flex: 1; min-width: 0; font-size: 20px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tl-txt small { display: block; font-size: 15px; color: var(--text-faint); margin-top: 2px; font-family: var(--font-data); }
 .tl-v { font-size: 22px; white-space: nowrap; }
