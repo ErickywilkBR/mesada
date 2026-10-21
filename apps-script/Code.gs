@@ -70,6 +70,19 @@ function setup() {
   if (d && ss.getSheets().length > 1) ss.deleteSheet(d);
 }
 
+/**
+ * Rode pelo editor quando o Google pedir permissão nova (ex.: depois de colar uma versão do código
+ * que usa um serviço novo). Só toca em cada serviço para disparar a tela de autorização; não muda dados.
+ */
+function autorizar() {
+  SpreadsheetApp.getActive().getName();
+  CacheService.getScriptCache().get('tv:ev');
+  LockService.getScriptLock();
+  PropertiesService.getScriptProperties().getProperty('cdi_dia');
+  UrlFetchApp.fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json', { muteHttpExceptions: true });
+  console.log('Permissões ok — versão ' + VERSAO);
+}
+
 // ---------------------------------------------------------------- entrada
 
 function doPost(e) {
